@@ -107,3 +107,5 @@ src/sim/                 Physics, controller, wind model, worker messages
 src/ui/                  Controls, status cards, and plots
 public/iea15mw-aero-v1.json  Aerodynamic coefficient table
 ```
+
+Deployed with Netlify continuous deployment.

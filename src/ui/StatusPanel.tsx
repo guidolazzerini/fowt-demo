@@ -25,7 +25,7 @@ interface MovingStats {
 
 const RAD_PER_SEC_TO_RPM = 60 / (2 * Math.PI);
 const RAD_TO_DEG = 180 / Math.PI;
-const STATUS_MOVING_WINDOW_S = 10;
+const STATUS_MOVING_WINDOW_S = 30;
 
 export function StatusPanel(props: StatusPanelProps) {
   const { sample, history, status, statusMessage, runState, isRunning } = props;
@@ -54,10 +54,10 @@ export function StatusPanel(props: StatusPanelProps) {
               <dd>
                 <strong>{item.value}</strong>
                 {item.averageValue === undefined ? null : (
-                  <small className="moving-average-value">10 s avg {item.averageValue}</small>
+                  <small className="moving-average-value">30 s avg {item.averageValue}</small>
                 )}
                 {item.standardDeviationValue === undefined ? null : (
-                  <small className="moving-std-value">10 s std {item.standardDeviationValue}</small>
+                  <small className="moving-std-value">30 s std {item.standardDeviationValue}</small>
                 )}
               </dd>
             </div>

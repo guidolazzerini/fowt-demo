@@ -89,7 +89,7 @@ export function ControlsPanel(props: ControlsPanelProps) {
           value={settings.turbulenceIntensity}
           min={0}
           max={0.25}
-          step={0.005}
+          step={0.05}
           unit="-"
           disabled={!isRandomWind}
           onChange={(turbulenceIntensity) => onSettingsChange({ turbulenceIntensity })}
@@ -103,7 +103,7 @@ export function ControlsPanel(props: ControlsPanelProps) {
             value={settings.gustAmplitudeMps}
             min={0}
             max={10}
-            step={0.1}
+            step={0.5}
             unit="m/s"
             disabled={!isGustWind}
             onChange={(gustAmplitudeMps) => onSettingsChange({ gustAmplitudeMps })}

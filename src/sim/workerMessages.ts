@@ -2,7 +2,7 @@ import type { SimulationScenarioSample } from "./simulation";
 
 export type UiWindMode = "constant" | "gust" | "random";
 
-export const DEMO_WIND_SPEED_MIN_MPS = 11;
+export const DEMO_WIND_SPEED_MIN_MPS = 10;
 export const DEMO_WIND_SPEED_MAX_MPS = 20;
 
 export interface SimulationUiSettings {
@@ -39,18 +39,18 @@ export interface ControllerBandwidthEstimate {
 
 export const DEFAULT_SIMULATION_UI_SETTINGS: SimulationUiSettings = {
   dtS: 0.02,
-  stepsPerWorkerTick: 4,
+  stepsPerWorkerTick: 8,
 
   windMode: "constant",
   meanWindSpeedMps: 11,
   turbulenceIntensity: 0.06,
   gustAmplitudeMps: 2,
-  gustStartTimeS: 5,
-  gustDurationS: 10,
+  gustStartTimeS: 30,
+  gustDurationS: 5,
 
-  pitchKp: 0.9,
-  pitchKi: 0.01,
-  initialCollectivePitchDeg: 7.5,
+  pitchKp: 1.50,
+  pitchKi: 0.05,
+  initialCollectivePitchDeg: 4.10,
   minPitchDeg: 0,
   maxPitchDeg: 30,
   maxPitchRateDegPerSec: 5,

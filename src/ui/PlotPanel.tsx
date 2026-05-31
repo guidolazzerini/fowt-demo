@@ -37,7 +37,7 @@ const PADDING_LEFT = 58;
 const PADDING_RIGHT = 18;
 const PADDING_TOP = 18;
 const PADDING_BOTTOM = 34;
-const PLOT_MOVING_WINDOW_S = 10;
+const PLOT_MOVING_WINDOW_S = 30;
 const MAX_PLOT_POINTS = 300;
 
 export function PlotPanel(props: PlotPanelProps) {
@@ -49,7 +49,7 @@ export function PlotPanel(props: PlotPanelProps) {
       <div className="panel-header">
         <div>
           <h2 id="plots-heading">Time histories</h2>
-          <p>Instantaneous traces only; 10 s average and standard deviation are shown as values.</p>
+          <p>Instantaneous traces only; 30 s average and standard deviation are shown as values.</p>
         </div>
         <span className={`plot-meta-pill run-state-${runState}`}>{formatRunState(runState)}</span>
       </div>

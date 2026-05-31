@@ -7,9 +7,9 @@ const RPM_TO_RAD_PER_SEC = (2 * Math.PI) / 60;
 const hubHeightM = 150;
 const platformPitchAxisHeightM = 0;
 const platformPitchLeverArmM = hubHeightM - platformPitchAxisHeightM;
-const ratedRotorSpeedRadPerSec = 7.56 * RPM_TO_RAD_PER_SEC;
+const ratedRotorSpeedRadPerSec = 7.55 * RPM_TO_RAD_PER_SEC;
 const ratedGeneratorTorqueNm = 15e6 / ratedRotorSpeedRadPerSec;
-const trimPitchRad = 7.5 * DEG_TO_RAD;
+const trimPitchRad = 4.10 * DEG_TO_RAD;
 
 export const DEMO_FLOATING_15MW: TunableParameters = {
   name: "Demo floating 15 MW",
@@ -52,8 +52,8 @@ export const DEMO_FLOATING_15MW: TunableParameters = {
   generatorTorqueTimeConstantS: 0.05,
 
   rotorSpeedRefRadPerSec: ratedRotorSpeedRadPerSec,
-  speedControllerKp: 0.9,
-  speedControllerKi: 0.01,
+  speedControllerKp: 1.50,
+  speedControllerKi: 0.05,
   enablePitchControllerAntiWindup: true,
   floatingFeedbackPitchRateLowPassCutoffHz: 0.2,
 };

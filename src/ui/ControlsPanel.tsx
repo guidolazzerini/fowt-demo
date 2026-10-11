@@ -1,347 +1,207 @@
-import {
-  DEMO_WIND_SPEED_MAX_MPS,
-  DEMO_WIND_SPEED_MIN_MPS,
-  type ControllerBandwidthEstimate,
-  type SimulationUiSettings,
-  type UiWindMode,
-} from "../sim/workerMessages";
+import { useRef, useState, type KeyboardEvent } from "react";
+import type { ControllerBandwidthEstimate, SimulationUiSettings, UiWindMode } from "../sim/workerMessages";
+import { SETTING_RANGES, type NumericSetting } from "../sim/settingRanges";
+import type { BrowserStrategy } from "../sim/generatingEnvelope";
+import { DEFAULT_TUNABLE_PARAMETERS as parameters } from "../sim/defaults";
+import { createBelowRatedControllerConfig } from "../sim/belowRated";
+import { SUGGESTED_REFERENCE_GAINS, SUGGESTED_OPERATING_POINT_GAINS } from "../sim/suggestedGains";
+import { InfoDisclosure } from "./InfoDisclosure";
 import { SliderRow } from "./SliderRow";
 
 interface ControlsPanelProps {
   settings: SimulationUiSettings;
   controllerBandwidthEstimate: ControllerBandwidthEstimate | undefined;
-  isRunning: boolean;
-  onStart: () => void;
-  onStop: () => void;
-  onReset: () => void;
   onSettingsChange: (settings: Partial<SimulationUiSettings>) => void;
 }
 
-interface ControlWarning {
-  id: string;
-  text: string;
-}
+const tabs = [
+  ["environment", "Environment"], ["strategy", "Control strategy"],
+  ["gains", "Gains"], ["floating", "Floating feedback"],
+  ["limits", "Limits and initialization"],
+] as const;
+type ControlTab = typeof tabs[number][0];
+// Read-only model values come from the same configuration used by the controller.
+const fixedTorque = createBelowRatedControllerConfig(parameters).torque;
 
-export function ControlsPanel(props: ControlsPanelProps) {
-  const {
-    settings,
-    controllerBandwidthEstimate,
-    isRunning,
-    onStart,
-    onStop,
-    onReset,
-    onSettingsChange,
-  } = props;
-  const isRandomWind = settings.windMode === "random";
-  const isGustWind = settings.windMode === "gust";
-  const controllerWarnings = getControllerWarnings(settings);
-  const floatingWarnings = getFloatingFeedbackWarnings(settings);
+export function ControlsPanel({ settings, controllerBandwidthEstimate, onSettingsChange }: ControlsPanelProps) {
+  // Presentation state only: selecting a tab never posts to the worker.
+  const [activeTab, setActiveTab] = useState<ControlTab>("environment");
+  const [suggestionId, setSuggestionId] = useState("reference");
+  const tabButtons = useRef<(HTMLButtonElement | null)[]>([]);
+  const coordinated = settings.strategy === "coordinated-tsr-pi";
 
-  return (
-    <section className="panel controls-panel" aria-labelledby="controls-heading">
-      <div className="panel-header">
-        <div>
-          <h2 id="controls-heading">Controls</h2>
-          <p>Region-3 FOWT demo inputs</p>
-        </div>
-        <div className="button-row">
-          <button type="button" onClick={onStart} disabled={isRunning}>
-            Start
-          </button>
-          <button type="button" onClick={onStop} disabled={!isRunning}>
-            Stop
-          </button>
-          <button type="button" onClick={onReset}>
-            Reset
-          </button>
-        </div>
-      </div>
-
-      <fieldset>
-        <legend>Wind disturbance</legend>
-        <label className="select-row">
-          <span>Mode</span>
-          <select
-            value={settings.windMode}
-            onChange={(event) =>
-              onSettingsChange({ windMode: event.currentTarget.value as UiWindMode })
-            }
-          >
-            <option value="constant">Constant</option>
-            <option value="gust">Gust</option>
-            <option value="random">Random</option>
-          </select>
-        </label>
-        <SliderRow
-          label="Mean wind speed"
-          value={settings.meanWindSpeedMps}
-          min={DEMO_WIND_SPEED_MIN_MPS}
-          max={DEMO_WIND_SPEED_MAX_MPS}
-          step={0.1}
-          unit="m/s"
-          onChange={(meanWindSpeedMps) => onSettingsChange({ meanWindSpeedMps })}
-        />
-        <p className="control-hint">
-          Wind speed is limited to 11–20 m/s for the above-rated demo.
-        </p>
-        <SliderRow
-          label="Turbulence intensity"
-          value={settings.turbulenceIntensity}
-          min={0}
-          max={0.25}
-          step={0.05}
-          unit="-"
-          disabled={!isRandomWind}
-          onChange={(turbulenceIntensity) => onSettingsChange({ turbulenceIntensity })}
-        />
-        {!isRandomWind ? (
-          <p className="control-hint">Turbulence intensity is active only in Random mode.</p>
-        ) : null}
-        <div className={`nested-controls${isGustWind ? "" : " is-disabled"}`}>
-          <SliderRow
-            label="Gust amplitude"
-            value={settings.gustAmplitudeMps}
-            min={0}
-            max={10}
-            step={0.5}
-            unit="m/s"
-            disabled={!isGustWind}
-            onChange={(gustAmplitudeMps) => onSettingsChange({ gustAmplitudeMps })}
-          />
-          <SliderRow
-            label="Gust start"
-            value={settings.gustStartTimeS}
-            min={0}
-            max={120}
-            step={0.5}
-            unit="s"
-            disabled={!isGustWind}
-            onChange={(gustStartTimeS) => onSettingsChange({ gustStartTimeS })}
-          />
-          <SliderRow
-            label="Gust duration"
-            value={settings.gustDurationS}
-            min={0.5}
-            max={120}
-            step={0.5}
-            unit="s"
-            disabled={!isGustWind}
-            onChange={(gustDurationS) => onSettingsChange({ gustDurationS })}
-          />
-          {!isGustWind ? <p className="control-hint">Gust controls are active only in Gust mode.</p> : null}
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>Pitch controller</legend>
-        <SliderRow
-          label="Kp"
-          value={settings.pitchKp}
-          min={0.1}
-          max={2}
-          step={0.05}
-          onChange={(pitchKp) => onSettingsChange({ pitchKp })}
-        />
-        <SliderRow
-          label="Ki"
-          value={settings.pitchKi}
-          min={0}
-          max={0.1}
-          step={0.001}
-          onChange={(pitchKi) => onSettingsChange({ pitchKi })}
-        />
-        <ControllerBandwidthCard estimate={controllerBandwidthEstimate} />
-        <WarningList warnings={controllerWarnings} />
-      </fieldset>
-
-      <fieldset>
-        <legend>Pitch limits</legend>
-        <SliderRow
-          label="Initial collective pitch"
-          value={settings.initialCollectivePitchDeg}
-          min={settings.minPitchDeg}
-          max={settings.maxPitchDeg}
-          step={0.1}
-          unit="deg"
-          onChange={(initialCollectivePitchDeg) =>
-            onSettingsChange({ initialCollectivePitchDeg })
-          }
-        />
-        <p className="control-hint control-hint-inline">Applied when the simulation is reset.</p>
-        <SliderRow
-          label="Minimum pitch"
-          value={settings.minPitchDeg}
-          min={0}
-          max={20}
-          step={0.1}
-          unit="deg"
-          onChange={(minPitchDeg) => onSettingsChange({ minPitchDeg })}
-        />
-        <SliderRow
-          label="Maximum pitch"
-          value={settings.maxPitchDeg}
-          min={5}
-          max={35}
-          step={0.1}
-          unit="deg"
-          onChange={(maxPitchDeg) => onSettingsChange({ maxPitchDeg })}
-        />
-        <SliderRow
-          label="Pitch rate limit"
-          value={settings.maxPitchRateDegPerSec}
-          min={0.2}
-          max={15}
-          step={0.1}
-          unit="deg/s"
-          onChange={(maxPitchRateDegPerSec) => onSettingsChange({ maxPitchRateDegPerSec })}
-        />
-      </fieldset>
-
-      <fieldset>
-        <legend>Floating feedback</legend>
-        <label className="checkbox-row">
-          <input
-            type="checkbox"
-            checked={settings.floatingFeedbackEnabled}
-            onChange={(event) =>
-              onSettingsChange({ floatingFeedbackEnabled: event.currentTarget.checked })
-            }
-          />
-          <span>Enable platform-pitch-rate feedback</span>
-        </label>
-        <SliderRow
-          label="Pitch-rate gain"
-          value={settings.platformPitchRateGainS}
-          min={0}
-          max={20}
-          step={0.5}
-          unit="s"
-          disabled={!settings.floatingFeedbackEnabled}
-          onChange={(platformPitchRateGainS) => onSettingsChange({ platformPitchRateGainS })}
-        />
-        {!settings.floatingFeedbackEnabled ? (
-          <p className="control-hint">Pitch-rate feedback gain is active only when enabled.</p>
-        ) : null}
-        <WarningList warnings={floatingWarnings} />
-      </fieldset>
-    </section>
-  );
-}
-
-
-function ControllerBandwidthCard(props: {
-  estimate: ControllerBandwidthEstimate | undefined;
-}) {
-  const { estimate } = props;
-
-  if (estimate === undefined) {
-    return (
-      <div className="bandwidth-card">
-        <span>Estimated crossover</span>
-        <strong>--</strong>
-        <p>Waiting for the worker linearisation.</p>
-      </div>
-    );
+  function navigateTabs(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    const next = event.key === "ArrowRight" ? (index + 1) % tabs.length :
+      event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length :
+      event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : undefined;
+    if (next === undefined) return;
+    event.preventDefault();
+    setActiveTab(tabs[next][0]);
+    tabButtons.current[next]?.focus();
   }
 
-  const crossoverLabel =
-    estimate.crossoverRadPerSec === undefined || estimate.crossoverHz === undefined
-      ? "not found"
-      : `${formatFrequency(estimate.crossoverRadPerSec)} rad/s · ${formatFrequency(
-          estimate.crossoverHz,
-        )} Hz`;
+  function applySuggestion() {
+    const gains = suggestionId === "reference" ? SUGGESTED_REFERENCE_GAINS :
+      SUGGESTED_OPERATING_POINT_GAINS.find(row => row.id === suggestionId)!.gains;
+    onSettingsChange({ pitchKp: gains.pitchKpS, pitchKi: gains.pitchKi,
+      torqueKpNmsPerRad: gains.torqueKpNmsPerRad, torqueKiNmPerRad: gains.torqueKiNmPerRad,
+      floatingFeedbackEnabled: gains.floatingFeedbackEnabled, platformPitchRateGainS: gains.platformPitchRateGainS,
+      torqueReferenceShiftGain: gains.torqueReferenceShiftGain, pitchReferenceShiftGain: gains.pitchReferenceShiftGain });
+  }
 
-  return (
-    <div className={`bandwidth-card${estimate.valid ? "" : " is-warning"}`}>
-      <span>Estimated PI crossover</span>
-      <strong>{crossoverLabel}</strong>
-      <p>{estimate.message}</p>
-      <small>
-        Low-order estimate from |(Kp + Ki/s) GβΩ(s)| = 1; platform coupling is
-        not included.
-      </small>
+  function slider(key: NumericSetting, label: string, unit?: string, disabled = false, scale = 1) {
+    const range = SETTING_RANGES[key];
+    // Torque is stored in N m, displayed in MN m. Initial pitch follows the
+    // selected actuator bounds, exactly as in worker validation.
+    const min = key === "initialCollectivePitchDeg" ? settings.minPitchDeg :
+      key === "maxPitchDeg" ? Math.max(range.min, settings.minPitchDeg) : range.min;
+    const max = key === "initialCollectivePitchDeg" ? settings.maxPitchDeg : range.max;
+    return <SliderRow label={label} value={settings[key] / scale} min={min / scale} max={max / scale}
+      step={range.step / scale} unit={unit} disabled={disabled}
+      onChange={value => onSettingsChange({ [key]: value * scale })} />;
+  }
+
+  return <section className="panel controls-panel" aria-labelledby="controls-heading">
+    <div className="panel-header"><h2 id="controls-heading">Experiment settings</h2><span className="small-label">Manual gains</span></div>
+    <div className="control-tabs" role="tablist" aria-label="Experiment settings">
+      {tabs.map(([id, label], index) => <button key={id} type="button" role="tab"
+        id={"tab-" + id} aria-controls={"panel-" + id} aria-selected={activeTab === id}
+        tabIndex={activeTab === id ? 0 : -1} ref={node => { tabButtons.current[index] = node; }}
+        onClick={() => setActiveTab(id)} onKeyDown={event => navigateTabs(event, index)}>{label}</button>)}
     </div>
-  );
-}
 
-function WarningList(props: { warnings: ControlWarning[] }) {
-  const { warnings } = props;
+    {/* Panels stay mounted so disclosure/input state survives tab changes. */}
+    <div id="panel-environment" role="tabpanel" aria-labelledby="tab-environment" tabIndex={0} hidden={activeTab !== "environment"}>
+      <p className="setting-timing">Wind changes apply immediately</p>
+      <label className="select-row"><span>Wind mode</span><select value={settings.windMode}
+        onChange={event => onSettingsChange({ windMode: event.currentTarget.value as UiWindMode })}>
+        <option value="constant">Constant</option><option value="gust">Gust</option><option value="random">Random</option>
+      </select></label>
+      {slider("meanWindSpeedMps", "Mean wind speed", "m/s")}
+      {settings.windMode === "random" && slider("turbulenceIntensity", "Turbulence intensity", "–")}
+      {settings.windMode === "gust" && <fieldset><legend>Gust</legend>
+        {slider("gustAmplitudeMps", "Gust amplitude", "m/s")}
+        {slider("gustStartTimeS", "Gust start", "s")}
+        {slider("gustDurationS", "Gust duration", "s")}
+      </fieldset>}
+      <InfoDisclosure label="Wind and operating boundaries">
+        <p>Generating ranges: legacy 10–20 m/s; coordinated 3–25 m/s. Wind fluctuations are not clipped to these limits.</p>
+        <p>Startup/shutdown on: 20 s torque averages govern low-wind starts and stops; filtered storm wind provides separate protection.
+          Off: an out-of-range wind pauses the run; move at least 0.2 m/s inside the range and Reset.</p>
+        <p>Wind edits restart the wind process; gains and tabs preserve it. Reset repeats the realization.
+          Gust start uses simulation time; negative amplitude creates a dip.</p>
+      </InfoDisclosure>
+    </div>
 
-  if (warnings.length === 0) {
-    return null;
-  }
+    <div id="panel-strategy" role="tabpanel" aria-labelledby="tab-strategy" tabIndex={0} hidden={activeTab !== "strategy"}>
+      <p className="setting-timing">Strategy changes pause and require Reset</p>
+      <label className="select-row"><span>Selected strategy</span><select value={settings.strategy}
+        onChange={event => onSettingsChange({ strategy: event.currentTarget.value as BrowserStrategy })}>
+        <option value="legacy-above-rated">Legacy above-rated · 10–20 m/s</option>
+        <option value="coordinated-tsr-pi">Coordinated TSR PI · 3–25 m/s</option>
+      </select></label>
+      <label className="checkbox-row"><input type="checkbox" checked={settings.smoothingEnabled} disabled={!coordinated}
+        onChange={event => onSettingsChange({ smoothingEnabled: event.currentTarget.checked })} /><span>Enable set-point smoothing</span></label>
+      <p className="setting-timing">{coordinated ? "Smoothing changes apply live · gains are retained" : "Smoothing is inactive in legacy mode"}</p>
+      <label className="checkbox-row"><input type="checkbox" checked={settings.startupShutdownEnabled} disabled={!coordinated}
+        onChange={event => onSettingsChange({ startupShutdownEnabled: event.currentTarget.checked })} />
+        <span>Simple startup / shutdown · Reset to parked</span></label>
+      <p className="setting-timing">Startup/shutdown selection requires Reset</p>
+      <InfoDisclosure label="Startup and shutdown assumptions">
+        <p>Start turbine waits for sufficient torque, free-wheels unloaded, then ramps load before handing over to your PI gains.
+          Shut down turbine cancels waiting or feathers to 90°; the parking brake engages only below 0.2 rpm.</p>
+        <p>20 s means: start at available torque ≥0.080 MN m; stop below actual aerodynamic torque 0.040 MN m.
+          Available torque is a model prediction at generating pitch, since parked torque is zero. Restart is manual.</p>
+        <p>Storm protection: 100 s filtered wind above 25 m/s; clears at 23 m/s. Overspeed stop: 120% rated.
+          Startup and feather loads are approximations; wind above 30 m/s stops the model.</p>
+      </InfoDisclosure>
+      <InfoDisclosure label="How the strategies work">
+        <p>Legacy: pitch PI with constant torque. Coordinated: TSR torque PI, pitch PI and an IEA low-wind pitch floor.
+          Smoothing coordinates the speed references near rated operation.</p>
+        <p>Gains change only when you edit them or apply a SUGGESTED set. There is no automatic gain scheduling.</p>
+      </InfoDisclosure>
+    </div>
 
-  return (
-    <ul className="control-warning-list" aria-label="Control warnings">
-      {warnings.map((warning) => (
-        <li key={warning.id}>{warning.text}</li>
-      ))}
-    </ul>
-  );
-}
+    <div id="panel-gains" role="tabpanel" aria-labelledby="tab-gains" tabIndex={0} hidden={activeTab !== "gains"}>
+      <p className="setting-timing">Gains apply live · no automatic scheduling</p>
+      {settings.startupShutdownEnabled && <p className="setting-timing">PI gains take control after startup handover</p>}
+      {coordinated && <div className="suggestion-box">
+        <label className="select-row"><span>SUGGESTED gains</span><select value={suggestionId} onChange={event => setSuggestionId(event.currentTarget.value)}>
+          <option value="reference">Fixed reference · pitch 0.60 / 0.015</option>
+          {SUGGESTED_OPERATING_POINT_GAINS.map(row => <option key={row.id} value={row.id}>{row.label}</option>)}
+        </select></label>
+        <button type="button" onClick={applySuggestion}>Apply SUGGESTED gains</button>
+        <InfoDisclosure label="What Apply changes"><p>Apply sets all gains and the floating-feedback switch. Wind, strategy and the smoothing switch stay unchanged.
+          Selecting a suggestion alone does not apply it.</p></InfoDisclosure>
+      </div>}
+      <fieldset><legend>Pitch PI</legend>
+        {slider("pitchKp", "Pitch Kp", "s")}{slider("pitchKi", "Pitch Ki", "–")}
+      </fieldset>
+      <fieldset disabled={!coordinated}><legend>Torque PI{!coordinated && " · inactive"}</legend>
+        {slider("torqueKpNmsPerRad", "Torque Kp", "MN m s/rad", !coordinated, 1e6)}
+        {slider("torqueKiNmPerRad", "Torque Ki", "MN m/rad", !coordinated, 1e6)}
+      </fieldset>
+      <fieldset disabled={!coordinated || !settings.smoothingEnabled}><legend>Smoothing{(!coordinated || !settings.smoothingEnabled) && " · inactive"}</legend>
+        {slider("torqueReferenceShiftGain", "Torque-reference gain", "–", !coordinated || !settings.smoothingEnabled)}
+        {slider("pitchReferenceShiftGain", "Pitch-reference gain", "–", !coordinated || !settings.smoothingEnabled)}
+      </fieldset>
+      {(settings.pitchKp > 1.6 || settings.pitchKi > .05 || (settings.pitchKp > 1.5 && settings.pitchKi > .03)) &&
+        <p className="setting-warning">High pitch gains can cause aggressive action or oscillation.</p>}
+      <InfoDisclosure label="PI tuning and crossover">
+        <p>Positive speed error increases braking torque or feathering pitch. With Ki &gt; 0, gain edits adjust integral state
+          to preserve output where possible. Ki = 0 clears the integral; rate limits still apply.</p>
+        <p>{coordinated ? "The scheduled pitch floor supports low-wind operation; the integral supplies above-rated trim." :
+          "Legacy uses a fixed 4.10° pitch bias within the pitch limits."}</p>
+        <p>{controllerBandwidthEstimate?.message ?? "Waiting for a crossover estimate."}</p>
+        {controllerBandwidthEstimate?.valid && <p>Estimated crossover: {controllerBandwidthEstimate.crossoverHz?.toPrecision(3)} Hz.
+          Rotor-only estimate; platform coupling is excluded.</p>}
+      </InfoDisclosure>
+    </div>
 
-function getControllerWarnings(settings: SimulationUiSettings): ControlWarning[] {
-  const warnings: ControlWarning[] = [];
+    <div id="panel-floating" role="tabpanel" aria-labelledby="tab-floating" tabIndex={0} hidden={activeTab !== "floating"}>
+      <p className="setting-timing">Feedback changes apply live</p>
+      <label className="checkbox-row"><input type="checkbox" checked={settings.floatingFeedbackEnabled}
+        onChange={event => onSettingsChange({ floatingFeedbackEnabled: event.currentTarget.checked })} /><span>Enable platform-pitch-rate feedback</span></label>
+      {slider("platformPitchRateGainS", "Pitch-rate gain", "s", !settings.floatingFeedbackEnabled)}
+      <dl className="model-values"><div><dt>Low-pass cutoff · fixed</dt><dd>{parameters.floatingFeedbackPitchRateLowPassCutoffHz} Hz</dd></div></dl>
+      {settings.floatingFeedbackEnabled && settings.platformPitchRateGainS > 10 &&
+        <p className="setting-warning">Large feedback gain can destabilize platform motion.</p>}
+      <InfoDisclosure label="Feedback sign and filtering">
+        <p>Filtered platform pitch rate adds to collective pitch. Gain units: seconds. Reduce the gain if platform motion grows.
+          Live edits preserve filter state.</p>
+      </InfoDisclosure>
+    </div>
 
-  if (settings.pitchKp > 1.6) {
-    warnings.push({
-      id: "high-kp",
-      text: "Kp is near the upper demo range; expect aggressive pitch action.",
-    });
-  }
-
-  if (settings.pitchKi > 0.05) {
-    warnings.push({
-      id: "high-ki",
-      text: "Ki is high; integral action may drive pitch saturation or oscillatory response.",
-    });
-  }
-
-  if (settings.pitchKp > 1.5 && settings.pitchKi > 0.03) {
-    warnings.push({
-      id: "high-pi-combination",
-      text: "The Kp/Ki combination is aggressive for this low-order floating demo.",
-    });
-  }
-
-  return warnings;
-}
-
-function getFloatingFeedbackWarnings(settings: SimulationUiSettings): ControlWarning[] {
-  if (!settings.floatingFeedbackEnabled) {
-    return [];
-  }
-
-  const warnings: ControlWarning[] = [];
-  if (settings.platformPitchRateGainS > 10) {
-    warnings.push({
-      id: "large-floating-gain",
-      text: "Large floating-feedback gain can destabilise the platform-pitch mode.",
-    });
-  }
-
-  if (settings.platformPitchRateGainS > 0) {
-    warnings.push({
-      id: "floating-gain-magnitude",
-      text: "Reduce the floating-feedback gain if platform motion grows.",
-    });
-  }
-
-  return warnings;
-}
-
-function formatFrequency(value: number): string {
-  if (!Number.isFinite(value)) {
-    return "--";
-  }
-
-  if (Math.abs(value) >= 1) {
-    return value.toFixed(2);
-  }
-
-  if (Math.abs(value) >= 0.01) {
-    return value.toFixed(3);
-  }
-
-  return value.toExponential(2);
+    <div id="panel-limits" role="tabpanel" aria-labelledby="tab-limits" tabIndex={0} hidden={activeTab !== "limits"}>
+      <p className="setting-timing">{coordinated ? "Pitch limit changes pause and require Reset" : "Pitch limits apply live · initial pitch requires Reset"}</p>
+      <fieldset><legend>Pitch actuator</legend>
+        {slider("minPitchDeg", "Minimum pitch", "deg")}{slider("maxPitchDeg", "Maximum pitch", "deg")}
+        {slider("maxPitchRateDegPerSec", "Pitch rate limit", "deg/s")}
+      </fieldset>
+      <fieldset><legend>Initialization</legend>
+        {coordinated ? <p className="setting-timing">{settings.startupShutdownEnabled ? "Reset parks the rotor at rest with 90° feather; use Start turbine." :
+          "Speed, pitch and torque are solved at the selected wind on Reset."}</p> :
+          slider("initialCollectivePitchDeg", "Initial collective pitch", "deg")}
+      </fieldset>
+      <InfoDisclosure label="Speed and torque limits · fixed">
+        <dl className="model-values">
+          <div><dt>{coordinated ? "Speed reference range" : "Speed reference"}</dt><dd>{coordinated && <>{(fixedTorque.minimumRotorSpeedRadPerSec * 30 / Math.PI).toFixed(0)}–</>}{(parameters.ratedRotorSpeedRadPerSec * 30 / Math.PI).toFixed(2)} rpm</dd></div>
+          <div><dt>{coordinated ? "Normal torque cap" : "Constant torque"}</dt><dd>{(fixedTorque.maxTorqueNm / 1e6).toFixed(3)} MN m</dd></div>
+          <div><dt>Absolute torque ceiling</dt><dd>{parameters.maxGeneratorTorqueNm / 1e6} MN m</dd></div>
+          {coordinated && <div><dt>Torque rate limit</dt><dd>{fixedTorque.maxTorqueRateNmPerSec / 1e6} MN m/s</dd></div>}
+        </dl>
+        <p>These limits are fixed. Actual speed can temporarily fall below the minimum reference.</p>
+      </InfoDisclosure>
+      <InfoDisclosure label="Initialization and model limits">
+        <p>Startup/shutdown on: Reset parks at 90°; use Start turbine. Generating pitch limits apply after handover.
+          Shutdown pitch rate is at most 2°/s or your lower limit.</p>
+        <p>Off: coordinated Reset solves a generating equilibrium; infeasible limits block Start.
+          Legacy initial pitch applies only on Reset.</p>
+        <p>Torque control uses simulated free-stream wind filtered over {fixedTorque.windFilterTimeConstantS} s; target TSR is {fixedTorque.targetTsr}.
+          Aerodynamics use rotor-effective wind including platform motion.</p>
+        <p>With startup/shutdown on, short excursions outside the aero table use a flagged approximation, limited to 30 m/s
+          free-stream and rotor-effective wind and the table maximum speed. Off, leaving the table pauses the model.</p>
+      </InfoDisclosure>
+    </div>
+  </section>;
 }

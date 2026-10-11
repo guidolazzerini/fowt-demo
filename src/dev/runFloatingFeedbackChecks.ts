@@ -90,7 +90,7 @@ export async function runFloatingFeedbackChecks(): Promise<void> {
   const allSamples = allResults.flatMap((result) => result.samples);
   const allDiagnostics = allSamples
     .map((sample) => sample.controllerDiagnostics)
-    .filter((diagnostics) => diagnostics !== undefined);
+    .filter((diagnostics) => diagnostics?.strategy === "legacy-above-rated");
 
   assert(
     allSamples.every(sampleIsFinite),
@@ -125,7 +125,8 @@ export async function runFloatingFeedbackChecks(): Promise<void> {
     disabledResult.samples.every(
       (sample) =>
         sample.controllerDiagnostics === undefined ||
-        Math.abs(sample.controllerDiagnostics.floatingPitchTermRad) < 1e-14,
+        (sample.controllerDiagnostics.strategy === "legacy-above-rated" &&
+          Math.abs(sample.controllerDiagnostics.floatingPitchTermRad) < 1e-14),
     ),
     "floating pitch term is zero when floating feedback is disabled",
   );
@@ -133,7 +134,7 @@ export async function runFloatingFeedbackChecks(): Promise<void> {
   assert(
     enabledResult.samples.some(
       (sample) =>
-        sample.controllerDiagnostics !== undefined &&
+        sample.controllerDiagnostics?.strategy === "legacy-above-rated" &&
         Math.abs(sample.controllerDiagnostics.floatingPitchTermRad) > 1e-6,
     ),
     "floating pitch term is non-zero when floating feedback is enabled and platform pitch rate is non-zero",
@@ -369,7 +370,8 @@ function renderFloatingFeedbackPanel(
       yLabel: "LPF(θdot) [deg/s]",
       series,
       getValue: (sample) =>
-        (sample.controllerDiagnostics?.filteredPlatformPitchRateRadPerSec ?? 0) *
+        (sample.controllerDiagnostics?.strategy === "legacy-above-rated"
+          ? sample.controllerDiagnostics.filteredPlatformPitchRateRadPerSec : 0) *
         RAD_TO_DEG,
     }),
   );
@@ -389,7 +391,8 @@ function renderFloatingFeedbackPanel(
       yLabel: "βfloat [deg]",
       series,
       getValue: (sample) =>
-        (sample.controllerDiagnostics?.floatingPitchTermRad ?? 0) * RAD_TO_DEG,
+        (sample.controllerDiagnostics?.strategy === "legacy-above-rated"
+          ? sample.controllerDiagnostics.floatingPitchTermRad : 0) * RAD_TO_DEG,
     }),
   );
 

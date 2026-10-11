@@ -1,11 +1,23 @@
 import type { SimulationScenarioSample } from "./simulation";
+import type { BrowserOperation, BrowserStrategy } from "./generatingEnvelope";
+import { SETTING_RANGES } from "./settingRanges";
 
 export type UiWindMode = "constant" | "gust" | "random";
 
-export const DEMO_WIND_SPEED_MIN_MPS = 10;
-export const DEMO_WIND_SPEED_MAX_MPS = 20;
+// Input range permits deliberate boundary crossings; generating limits are separate.
+export const DEMO_WIND_SPEED_MIN_MPS = SETTING_RANGES.meanWindSpeedMps.min;
+export const DEMO_WIND_SPEED_MAX_MPS = SETTING_RANGES.meanWindSpeedMps.max;
+export const TORQUE_KP_MAX = SETTING_RANGES.torqueKpNmsPerRad.max;
+export const TORQUE_KI_MAX = SETTING_RANGES.torqueKiNmPerRad.max;
 
 export interface SimulationUiSettings {
+  strategy: BrowserStrategy;
+  startupShutdownEnabled: boolean;
+  smoothingEnabled: boolean;
+  torqueKpNmsPerRad: number;
+  torqueKiNmPerRad: number;
+  torqueReferenceShiftGain: number;
+  pitchReferenceShiftGain: number;
   dtS: number;
   stepsPerWorkerTick: number;
 
@@ -38,6 +50,13 @@ export interface ControllerBandwidthEstimate {
 }
 
 export const DEFAULT_SIMULATION_UI_SETTINGS: SimulationUiSettings = {
+  strategy: "legacy-above-rated",
+  startupShutdownEnabled: false,
+  smoothingEnabled: true,
+  torqueKpNmsPerRad: 50.4e6,
+  torqueKiNmPerRad: 2.24e6,
+  torqueReferenceShiftGain: 1,
+  pitchReferenceShiftGain: 0.001,
   dtS: 0.02,
   stepsPerWorkerTick: 8,
 
@@ -65,6 +84,8 @@ export type SimulationWorkerRequest =
   | { type: "initialise" }
   | { type: "start" }
   | { type: "stop" }
+  | { type: "start-turbine" }
+  | { type: "shutdown-turbine" }
   | { type: "reset" }
   | { type: "update-settings"; settings: Partial<SimulationUiSettings> };
 
@@ -78,6 +99,7 @@ export type SimulationWorkerResponse =
   | {
       type: "ready";
       settings: SimulationUiSettings;
+      operation: BrowserOperation;
       sample: SimulationScenarioSample;
       controllerBandwidthEstimate: ControllerBandwidthEstimate;
       isRunning: boolean;
@@ -86,6 +108,7 @@ export type SimulationWorkerResponse =
       type: "sample";
       sample: SimulationScenarioSample;
       settings: SimulationUiSettings;
+      operation: BrowserOperation;
       controllerBandwidthEstimate: ControllerBandwidthEstimate;
       isRunning: boolean;
     }

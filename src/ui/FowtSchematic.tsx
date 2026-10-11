@@ -1,4 +1,5 @@
 import type { SimulationScenarioSample } from "../sim/simulation";
+import { InfoDisclosure } from "./InfoDisclosure";
 
 interface FowtSchematicProps {
   sample: SimulationScenarioSample | undefined;
@@ -51,7 +52,7 @@ export function FowtSchematic(props: FowtSchematicProps) {
     <section className="panel schematic-panel" aria-labelledby="schematic-heading">
       <div className="panel-header">
         <div>
-          <h2 id="schematic-heading">FOWT side-view schematic</h2>
+          <h2 id="schematic-heading">Turbine motion</h2>
         </div>
       </div>
 
@@ -127,7 +128,9 @@ export function FowtSchematic(props: FowtSchematicProps) {
         </g>
       </svg>
 
-      <SchematicReadouts sample={sample} history={history} />
+      <InfoDisclosure label="Schematic readouts">
+        <SchematicReadouts sample={sample} history={history} />
+      </InfoDisclosure>
     </section>
   );
 }
@@ -250,7 +253,7 @@ function CollectivePitchGauge(props: {
 }) {
   const { centre, collectivePitchDeg, accentColour } = props;
   const minPitchDeg = -5;
-  const maxPitchDeg = 30;
+  const maxPitchDeg = 90; // Include the optional feathered/parked sequence.
   const clampedPitchDeg = clamp(collectivePitchDeg, minPitchDeg, maxPitchDeg);
   const pitchFraction = (clampedPitchDeg - minPitchDeg) / (maxPitchDeg - minPitchDeg);
   const startAngleDeg = 210;
@@ -446,7 +449,7 @@ function SchematicReadouts(props: {
       2,
     ),
     createReadout(
-      "Power",
+      "Aerodynamic power",
       sample === undefined ? undefined : sample.aerodynamicPowerW / 1e6,
       history,
       (entry) => entry.aerodynamicPowerW / 1e6,

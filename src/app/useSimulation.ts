@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SimulationScenarioSample } from "../sim/simulation";
+import type { BrowserOperation } from "../sim/generatingEnvelope";
 import {
   DEFAULT_SIMULATION_UI_SETTINGS,
   type ControllerBandwidthEstimate,
@@ -15,6 +16,7 @@ const MAX_HISTORY_SAMPLES = 600;
 export type SimulationRunState = "loading" | "stopped" | "running" | "reset" | "error";
 
 export interface UseSimulationResult {
+  operation: BrowserOperation | undefined;
   latestSample: SimulationScenarioSample | undefined;
   history: SimulationScenarioSample[];
   controllerBandwidthEstimate: ControllerBandwidthEstimate | undefined;
@@ -26,6 +28,8 @@ export interface UseSimulationResult {
   startSimulation: () => void;
   stopSimulation: () => void;
   resetSimulation: () => void;
+  startTurbine: () => void;
+  shutdownTurbine: () => void;
   updateSettings: (settings: Partial<SimulationUiSettings>) => void;
 }
 
@@ -42,6 +46,7 @@ export function useSimulation(): UseSimulationResult {
   const [statusMessage, setStatusMessage] = useState<string>();
   const [runState, setRunState] = useState<SimulationRunState>("loading");
   const [isRunning, setIsRunning] = useState(false);
+  const [operation, setOperation] = useState<BrowserOperation>();
 
   const updateRunStateFromWorker = useCallback(
     (nextStatus: SimulationWorkerStatus, nextIsRunning: boolean): void => {
@@ -78,6 +83,7 @@ export function useSimulation(): UseSimulationResult {
           updateRunStateFromWorker(response.status, response.isRunning);
           break;
         case "ready":
+          setOperation(response.operation);
           setStatus(response.isRunning ? "running" : "ready");
           setStatusMessage(undefined);
           setSettings(response.settings);
@@ -87,6 +93,7 @@ export function useSimulation(): UseSimulationResult {
           updateRunStateFromWorker(response.isRunning ? "running" : "ready", response.isRunning);
           break;
         case "sample":
+          setOperation(response.operation);
           setStatus(response.isRunning ? "running" : "ready");
           setStatusMessage(undefined);
           setSettings(response.settings);
@@ -161,6 +168,9 @@ export function useSimulation(): UseSimulationResult {
     postRequest({ type: "reset" });
   }, [postRequest]);
 
+  const startTurbine = useCallback(() => postRequest({ type: "start-turbine" }), [postRequest]);
+  const shutdownTurbine = useCallback(() => postRequest({ type: "shutdown-turbine" }), [postRequest]);
+
   const updateSettings = useCallback(
     (partialSettings: Partial<SimulationUiSettings>) => {
       setSettings((previousSettings) => ({ ...previousSettings, ...partialSettings }));
@@ -170,6 +180,7 @@ export function useSimulation(): UseSimulationResult {
   );
 
   return {
+    operation,
     latestSample,
     history,
     controllerBandwidthEstimate,
@@ -181,6 +192,8 @@ export function useSimulation(): UseSimulationResult {
     startSimulation,
     stopSimulation,
     resetSimulation,
+    startTurbine,
+    shutdownTurbine,
     updateSettings,
   };
 }

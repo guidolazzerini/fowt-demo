@@ -1,9 +1,9 @@
 import {
-  computeAerodynamicOutputs,
   loadAeroTable,
   type AeroPerformanceTable,
 } from "../sim/aero";
 import { DEFAULT_TUNABLE_PARAMETERS } from "../sim/defaults";
+import { solveFixedPitchOperatingPoint } from "../sim/operatingPoint";
 import type { ControlInputs, EnvironmentInputs } from "../sim/inputs";
 import { stepSimulation } from "../sim/model";
 import type { TunableParameters } from "../sim/params";
@@ -57,18 +57,10 @@ function evaluateAero(
   pitchRad: number,
   windSpeedMps: number,
 ) {
-  return computeAerodynamicOutputs(
-    table,
-    {
-      rotorSpeedRadPerSec,
-      pitchRad,
-      windSpeedMps,
-    },
-    {
-      airDensityKgPerM3: params.airDensityKgPerM3,
-      rotorRadiusM: params.rotorRadiusM,
-    },
-  );
+  // Solve power and platform balance using the same projected wind as the model.
+  return solveFixedPitchOperatingPoint(
+    table, params, windSpeedMps, rotorSpeedRadPerSec, pitchRad,
+  ).aero;
 }
 
 function solvePitchForTargetPower(
@@ -140,17 +132,10 @@ function buildSteadyState(
   params: TunableParameters,
   spec: SteadyStateCase,
 ): SteadyStateDefinition {
-  const aero = evaluateAero(
-    table,
-    params,
-    spec.rotorSpeedRadPerSec,
-    spec.pitchRad,
-    spec.windSpeedMps,
-  );
-
-  const platformPitchEqRad =
-    (params.thrustToPitchMomentArmM * aero.thrustN) /
-    params.platformPitchStiffnessNm;
+  const point = solveFixedPitchOperatingPoint(table, params,
+    spec.windSpeedMps, spec.rotorSpeedRadPerSec, spec.pitchRad);
+  const aero = point.aero;
+  const platformPitchEqRad = point.platformPitchRad;
 
   const environment: EnvironmentInputs = {
     windSpeedMps: spec.windSpeedMps,
@@ -305,7 +290,7 @@ function checkOneCase(
   };
 }
 
-async function runSteadyStateChecks(): Promise<void> {
+export async function runSteadyStateChecks(): Promise<void> {
   console.group("Steady-state validation");
 
   const params = DEFAULT_TUNABLE_PARAMETERS;
@@ -354,10 +339,4 @@ async function runSteadyStateChecks(): Promise<void> {
   console.table(rows);
   console.log("Steady-state validation passed.");
   console.groupEnd();
-}
-
-if (import.meta.env.DEV) {
-  void runSteadyStateChecks().catch((error: unknown) => {
-    console.error("Steady-state validation failed:", error);
-  });
 }

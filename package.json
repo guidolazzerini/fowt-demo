@@ -7,6 +7,15 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "check:all": "npm run check:live-settings && npm run check:below-rated && npm run check:smoothing && npm run check:suggested-gains && npm run check:browser-range && npm run check:controls && npm run check:startup-shutdown",
+    "check:startup-shutdown": "node scripts/check-startup-shutdown.mjs",
+    "check:preview": "node scripts/check-preview.mjs",
+    "check:live-settings": "node scripts/check-live-settings.mjs",
+    "check:below-rated": "node scripts/check-below-rated.mjs",
+    "check:smoothing": "node scripts/check-smoothing.mjs",
+    "check:suggested-gains": "node scripts/check-suggested-gains.mjs",
+    "check:browser-range": "node scripts/check-browser-range.mjs",
+    "check:controls": "node scripts/check-controls.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

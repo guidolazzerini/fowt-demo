@@ -4,16 +4,24 @@ import {
 } from "./aero";
 import {
   createPitchControllerConfig,
-  createPitchControllerState,
-  stepPitchController,
   type PitchControllerConfig,
-  type PitchControllerDiagnostics,
   type PitchControllerState,
 } from "./controller";
+import {
+  createLegacyTurbineControllerConfig,
+  createTurbineControllerState,
+  stepTurbineController,
+  type TurbineControllerDiagnostics,
+  type TurbineControllerState,
+  type BelowRatedTurbineControllerConfig,
+  type BelowRatedTurbineControllerState,
+} from "./turbineController";
 import type { ControlInputs } from "./inputs";
+import type { CoordinatedControllerConfig, CoordinatedControllerState } from "./coordinatedController";
 import { computeRelativeWind, stepSimulation } from "./model";
 import type { TunableParameters } from "./params";
 import type { TurbineState } from "./state";
+import type { OperatingSequence } from "./operatingSequence";
 import {
   createWindDisturbance,
   getWindDisturbanceSample,
@@ -24,7 +32,16 @@ import {
 
 export type SimulationControllerMode =
   | OpenLoopFixedControlMode
-  | ClosedLoopPitchPiControlMode;
+  | ClosedLoopPitchPiControlMode
+  | BelowRatedControlMode
+  | { mode: "coordinated-tsr-pi"; config: CoordinatedControllerConfig; initialControllerState: CoordinatedControllerState };
+
+/** Offline development only; no transition or above-rated pitch regulation yet. */
+export interface BelowRatedControlMode {
+  mode: "below-rated-tsr-pi";
+  config: BelowRatedTurbineControllerConfig;
+  initialControllerState: BelowRatedTurbineControllerState;
+}
 
 export interface OpenLoopFixedControlMode {
   mode: "open-loop-fixed";
@@ -97,7 +114,8 @@ export interface SimulationScenarioSample {
 
   wavePitchMomentNm: number;
 
-  controllerDiagnostics?: PitchControllerDiagnostics;
+  controllerDiagnostics?: TurbineControllerDiagnostics;
+  operatingSequence?: OperatingSequence;
 }
 
 export interface SimulationScenarioResult {
@@ -240,7 +258,7 @@ export function runSimulationScenario(
   let windSample = getWindDisturbanceSample(wind);
   let controllerState = createScenarioControllerState(scenario, params);
   let currentControl = createInitialControl(scenario, params, controllerState);
-  let currentControllerDiagnostics: PitchControllerDiagnostics | undefined;
+  let currentControllerDiagnostics: TurbineControllerDiagnostics | undefined;
 
   const samples: SimulationScenarioSample[] = [];
 
@@ -260,21 +278,25 @@ export function runSimulationScenario(
       break;
     }
 
-    if (scenario.controller.mode === "closed-loop-pitch-pi") {
+    if (scenario.controller.mode !== "open-loop-fixed") {
       if (controllerState === undefined) {
         throw new Error(
           "Internal error: closed-loop scenario has no controller state.",
         );
       }
 
-      const controllerConfig =
-        scenario.controller.config ?? createPitchControllerConfig(params);
+      // Keep the existing scenario API as an adapter to the explicit legacy
+      // strategy, so saved scenarios and their initial states remain valid.
+      const controllerConfig = scenario.controller.mode !== "closed-loop-pitch-pi"
+        ? scenario.controller.config
+        : createLegacyTurbineControllerConfig(scenario.controller.config ?? createPitchControllerConfig(params));
 
-      const controllerResult = stepPitchController(
+      const controllerResult = stepTurbineController(
         controllerState,
         {
           rotorSpeedRadPerSec: state.rotorSpeedRadPerSec,
           platformPitchRateRadPerSec: state.platformPitchRateRadPerSec,
+          simulatedFreeStreamWindMps: windSample.windSpeedMps,
         },
         controllerConfig,
         scenario.dtS,
@@ -319,31 +341,37 @@ export function getExpectedSimulationSampleCount(
 function createScenarioControllerState(
   scenario: SimulationScenarioConfig,
   params: TunableParameters,
-): PitchControllerState | undefined {
+): TurbineControllerState | undefined {
+  if (scenario.controller.mode === "below-rated-tsr-pi" || scenario.controller.mode === "coordinated-tsr-pi") return scenario.controller.initialControllerState;
   if (scenario.controller.mode !== "closed-loop-pitch-pi") {
     return undefined;
   }
 
-  if (scenario.controller.initialControllerState !== undefined) {
-    return scenario.controller.initialControllerState;
-  }
-
-  const controllerConfig =
-    scenario.controller.config ?? createPitchControllerConfig(params);
-
-  return createPitchControllerState(
-    controllerConfig,
-    scenario.controller.initialPitchRad ?? controllerConfig.trimPitchRad,
+  const controllerConfig = createLegacyTurbineControllerConfig(
+    scenario.controller.config ?? createPitchControllerConfig(params),
   );
+
+  return createTurbineControllerState(controllerConfig, {
+    initialPitchRad: scenario.controller.initialPitchRad,
+    pitchState: scenario.controller.initialControllerState,
+  });
 }
 
 function createInitialControl(
   scenario: SimulationScenarioConfig,
   params: TunableParameters,
-  controllerState: PitchControllerState | undefined,
+  controllerState: TurbineControllerState | undefined,
 ): ControlInputs {
   if (scenario.controller.mode === "open-loop-fixed") {
     return scenario.controller.fixedControl;
+  }
+  if (scenario.controller.mode === "below-rated-tsr-pi") {
+    return { collectivePitchRad: scenario.controller.initialControllerState.previousPitchRad,
+      generatorTorqueNm: scenario.controller.initialControllerState.torque.previousTorqueNm };
+  }
+  if (scenario.controller.mode === "coordinated-tsr-pi") {
+    return { collectivePitchRad: scenario.controller.initialControllerState.pitch.previousPitchRad,
+      generatorTorqueNm: scenario.controller.initialControllerState.torque.previousTorqueNm };
   }
 
   const controllerConfig =
@@ -351,7 +379,7 @@ function createInitialControl(
 
   return {
     collectivePitchRad:
-      controllerState?.previousPitchRad ??
+      (controllerState?.strategy === "legacy-above-rated" ? controllerState.pitch.previousPitchRad : undefined) ??
       scenario.controller.initialPitchRad ??
       controllerConfig.trimPitchRad,
     generatorTorqueNm: controllerConfig.generatorTorqueNm,
@@ -362,6 +390,8 @@ function getInitialPitchRad(
   scenario: SimulationScenarioConfig,
   params: TunableParameters,
 ): number {
+  if (scenario.controller.mode === "below-rated-tsr-pi") return scenario.controller.initialControllerState.previousPitchRad;
+  if (scenario.controller.mode === "coordinated-tsr-pi") return scenario.controller.initialControllerState.pitch.previousPitchRad;
   if (scenario.controller.mode === "open-loop-fixed") {
     return scenario.controller.fixedControl.collectivePitchRad;
   }
@@ -379,7 +409,7 @@ function createSimulationSample(args: {
   windSample: WindDisturbanceSample;
   params: TunableParameters;
   aeroTable: AeroPerformanceTable;
-  controllerDiagnostics?: PitchControllerDiagnostics;
+  controllerDiagnostics?: TurbineControllerDiagnostics;
 }): SimulationScenarioSample {
   const { state, control, windSample, params, aeroTable } = args;
 

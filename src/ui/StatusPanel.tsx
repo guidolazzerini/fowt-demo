@@ -1,6 +1,8 @@
 import type { SimulationRunState } from "../app/useSimulation";
 import type { SimulationScenarioSample } from "../sim/simulation";
 import type { SimulationWorkerStatus } from "../sim/workerMessages";
+import { InfoDisclosure } from "./InfoDisclosure";
+import { generatorMechanicalPowerW } from "./diagnosticSignals";
 
 interface StatusPanelProps {
   sample: SimulationScenarioSample | undefined;
@@ -35,34 +37,38 @@ export function StatusPanel(props: StatusPanelProps) {
     <section className="panel status-panel" aria-labelledby="status-heading">
       <div className="panel-header">
         <div>
-          <h2 id="status-heading">Live status</h2>
-          <p>{statusMessage ?? getStatusLabel(status, runState, isRunning)}</p>
+          <h2 id="status-heading">At a glance</h2>
+          {statusMessage && <p>{statusMessage}</p>}
         </div>
         <div className="status-badges" aria-label="Simulation state">
           <span className={`run-state-pill run-state-${runState}`}>{formatRunState(runState)}</span>
-          <span className={`status-pill status-${status}`}>{status}</span>
         </div>
       </div>
 
       {sample === undefined ? (
         <p className="empty-state">Waiting for the simulation worker.</p>
       ) : (
+        <>
         <dl className="status-grid">
-          {items.map((item) => (
+          {items.filter(item => ["Rotor speed", "Collective pitch", "Platform pitch", "Wind speed"].includes(item.label)).map((item) => (
             <div className="status-card" key={item.label}>
               <dt>{item.label}</dt>
               <dd>
                 <strong>{item.value}</strong>
-                {item.averageValue === undefined ? null : (
-                  <small className="moving-average-value">30 s avg {item.averageValue}</small>
-                )}
-                {item.standardDeviationValue === undefined ? null : (
-                  <small className="moving-std-value">30 s std {item.standardDeviationValue}</small>
-                )}
               </dd>
             </div>
           ))}
         </dl>
+        <InfoDisclosure label="All values and 30 s statistics">
+          <p>{getStatusLabel(status, runState, isRunning)} · averages use the available samples in the last 30 s.</p>
+          <div className="table-scroll"><table className="statistics-table">
+            <caption className="sr-only">Current values and moving statistics</caption>
+            <thead><tr><th scope="col">Signal</th><th scope="col">Now</th><th scope="col">Average</th><th scope="col">Std dev</th></tr></thead>
+            <tbody>{items.map(item => <tr key={item.label}><th scope="row">{item.label}</th><td>{item.value}</td>
+              <td>{item.averageValue ?? "—"}</td><td>{item.standardDeviationValue ?? "—"}</td></tr>)}</tbody>
+          </table></div>
+        </InfoDisclosure>
+        </>
       )}
     </section>
   );
@@ -88,12 +94,28 @@ function createStatusItems(
       2,
     ),
     createStatusItem(
-      "Power",
+      "Aerodynamic power",
       sample.aerodynamicPowerW / 1e6,
       history,
       (entry) => entry.aerodynamicPowerW / 1e6,
       "MW",
       2,
+    ),
+    createStatusItem(
+      "Generator mechanical power",
+      generatorMechanicalPowerW(sample) / 1e6,
+      history,
+      (entry) => generatorMechanicalPowerW(entry) / 1e6,
+      "MW",
+      2,
+    ),
+    createStatusItem(
+      "Generator torque",
+      sample.generatorTorqueNm / 1e6,
+      history,
+      (entry) => entry.generatorTorqueNm / 1e6,
+      "MN m",
+      3,
     ),
     createStatusItem(
       "Collective pitch",

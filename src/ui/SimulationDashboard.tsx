@@ -3,6 +3,8 @@ import { ControlsPanel } from "./ControlsPanel";
 import { FowtSchematic } from "./FowtSchematic";
 import { PlotPanel } from "./PlotPanel";
 import { StatusPanel } from "./StatusPanel";
+import { SimulationToolbar } from "./SimulationToolbar";
+import { ControllerDiagnostics } from "./ControllerDiagnostics";
 
 export function SimulationDashboard() {
   const simulation = useSimulation();
@@ -11,28 +13,19 @@ export function SimulationDashboard() {
     <main className="dashboard-shell">
       <header className="app-header">
         <div>
-          <p className="eyebrow">Floating offshore wind turbine demo</p>
-          <h1>Browser-based FOWT simulator</h1>
-          <p>
-            Educational 1-DOF IEA 15 MW floating turbine model with aerodynamics from lookup tables,
-            above-rated collective pitch control, wind disturbances, and optional
-            platform-pitch-rate feedback.
-          </p>
+          <p className="eyebrow">IEA 15 MW · Floating wind lab</p>
+          <h1>Explore turbine control</h1>
         </div>
       </header>
 
+      <SimulationToolbar simulation={simulation} />
       <div className="dashboard-grid">
         <ControlsPanel
           settings={simulation.settings}
           controllerBandwidthEstimate={simulation.controllerBandwidthEstimate}
-          isRunning={simulation.isRunning}
-          onStart={simulation.startSimulation}
-          onStop={simulation.stopSimulation}
-          onReset={simulation.resetSimulation}
           onSettingsChange={simulation.updateSettings}
         />
         <div className="right-column">
-          <FowtSchematic sample={simulation.latestSample} history={simulation.history} />
           <StatusPanel
             sample={simulation.latestSample}
             history={simulation.history}
@@ -41,7 +34,9 @@ export function SimulationDashboard() {
             runState={simulation.runState}
             isRunning={simulation.isRunning}
           />
+          <FowtSchematic sample={simulation.latestSample} history={simulation.history} />
           <PlotPanel history={simulation.history} runState={simulation.runState} />
+          <ControllerDiagnostics history={simulation.history} operation={simulation.operation} settings={simulation.settings} />
         </div>
       </div>
     </main>

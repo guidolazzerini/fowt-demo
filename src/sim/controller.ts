@@ -98,6 +98,37 @@ export function createPitchControllerState(
   };
 }
 
+/**
+ * Match the last applied pitch [rad] after tuning or choosing an initial pitch.
+ * Positive speed error [rad/s] increases pitch. The integral cancels the new
+ * proportional term and the existing filtered floating-feedback contribution.
+ * At Ki = 0 there is no integral authority: clear it and let the rate limiter
+ * move pitch toward the proportional-only demand on subsequent steps.
+ */
+export function retunePitchControllerState(
+  state: PitchControllerState,
+  rotorSpeedRadPerSec: number,
+  config: PitchControllerConfig,
+): PitchControllerState {
+  validatePitchControllerConfig(config);
+  assertFinite("rotorSpeedRadPerSec", rotorSpeedRadPerSec);
+  const errorRadPerSec = rotorSpeedRadPerSec - config.rotorSpeedRefRadPerSec;
+  const floatingPitchRad = config.floatingFeedbackEnabled
+    ? config.platformPitchRateGainS * state.filteredPlatformPitchRateRadPerSec
+    : 0;
+  const targetPitchRad = clamp(
+    state.previousPitchRad, config.minPitchRad, config.maxPitchRad,
+  );
+
+  return {
+    ...state,
+    integralErrorRad: config.pitchKi === 0
+      ? 0
+      : (targetPitchRad - config.trimPitchRad - config.pitchKp * errorRadPerSec -
+          floatingPitchRad) / config.pitchKi,
+  };
+}
+
 export function stepPitchController(
   state: PitchControllerState,
   measurements: PitchControllerMeasurements,
@@ -132,8 +163,10 @@ export function stepPitchController(
   cutoffHz: config.floatingFeedbackPitchRateLowPassCutoffHz,
   dtS,
   });
-  const candidateIntegralErrorRad =
-    state.integralErrorRad + rotorSpeedErrorRadPerSec * dtS;
+  // Do not accumulate a hidden integral while Ki is zero.
+  const candidateIntegralErrorRad = config.pitchKi === 0
+    ? 0
+    : state.integralErrorRad + rotorSpeedErrorRadPerSec * dtS;
 
   const candidateStep = calculateLimitedPitchStep({
     config,
@@ -145,6 +178,7 @@ export function stepPitchController(
   });
 
   const holdIntegral =
+    config.pitchKi !== 0 &&
     config.enableAntiWindup &&
     shouldHoldIntegral({
       rotorSpeedErrorRadPerSec,

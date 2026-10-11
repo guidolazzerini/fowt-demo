@@ -1,20 +1,20 @@
 import type { SimulationRunState } from "../app/useSimulation";
 import type { SimulationScenarioSample } from "../sim/simulation";
+import { useState } from "react";
+import { InfoDisclosure } from "./InfoDisclosure";
+import { finitePlotSegments, generatorMechanicalPowerW, type PlotPoint } from "./diagnosticSignals";
 
 interface PlotPanelProps {
   history: SimulationScenarioSample[];
   runState: SimulationRunState;
 }
 
-interface PlotSeries {
+export interface PlotSeries {
   title: string;
   unit: string;
   values: PlotPoint[];
-}
-
-interface PlotPoint {
-  timeS: number;
-  value: number;
+  label?: string;
+  overlays?: { label: string; values: PlotPoint[] }[];
 }
 
 interface PlotBounds {
@@ -38,28 +38,35 @@ const PADDING_RIGHT = 18;
 const PADDING_TOP = 18;
 const PADDING_BOTTOM = 34;
 const PLOT_MOVING_WINDOW_S = 30;
-const MAX_PLOT_POINTS = 300;
 
 export function PlotPanel(props: PlotPanelProps) {
   const { history, runState } = props;
   const series = createPlotSeries(history);
+  const [showStatistics, setShowStatistics] = useState(false);
 
   return (
     <section className="panel plot-panel" aria-labelledby="plots-heading">
       <div className="panel-header">
         <div>
           <h2 id="plots-heading">Time histories</h2>
-          <p>Instantaneous traces only; 30 s average and standard deviation are shown as values.</p>
         </div>
         <span className={`plot-meta-pill run-state-${runState}`}>{formatRunState(runState)}</span>
       </div>
+      <InfoDisclosure label="Plot options">
+        <label className="checkbox-row"><input type="checkbox" checked={showStatistics}
+          onChange={event => setShowStatistics(event.currentTarget.checked)} /><span>Show 30 s average and standard deviation</span></label>
+        <p>Traces show instantaneous values. Axes scale to the displayed history. Statistics use available samples in the last 30 s.</p>
+        <p>Aerodynamic power comes from the table, or torque × speed during approximate transients.
+          Negative aerodynamic power indicates braking. Generator mechanical power is generator torque × rotor speed, before electrical losses.
+          The traces can differ during acceleration and through table interpolation.</p>
+      </InfoDisclosure>
 
       {history.length === 0 ? (
         <p className="empty-state">Waiting for the first simulation sample.</p>
       ) : (
         <div className="plot-grid">
           {series.map((plotSeries) => (
-            <MiniPlot key={plotSeries.title} series={plotSeries} />
+            <MiniPlot key={plotSeries.title} series={plotSeries} showStatistics={showStatistics} />
           ))}
         </div>
       )}
@@ -102,24 +109,27 @@ function createPlotSeries(history: SimulationScenarioSample[]): PlotSeries[] {
       })),
     },
     {
-      title: "Aerodynamic power",
+      title: "Power comparison",
       unit: "MW",
+      label: "Aerodynamic",
       values: history.map((sample) => ({
         timeS: sample.timeS,
         value: sample.aerodynamicPowerW / 1e6,
       })),
+      overlays: [{ label: "Generator mechanical", values: history.map(sample => ({
+        timeS: sample.timeS, value: generatorMechanicalPowerW(sample) / 1e6,
+      })) }],
     },
   ];
 }
 
-function MiniPlot(props: { series: PlotSeries }) {
-  const { series } = props;
-  const finiteValues = getFiniteValues(series.values);
+export function MiniPlot(props: { series: PlotSeries; showStatistics?: boolean }) {
+  const { series, showStatistics } = props;
+  const lines = [{ label: series.label ?? series.title, values: series.values }, ...(series.overlays ?? [])];
+  const finiteValues = getFiniteValues(lines.flatMap(line => line.values));
   const bounds = getBounds(finiteValues);
-  const drawableValues = getDrawableValues(downsamplePlotPoints(finiteValues, MAX_PLOT_POINTS), bounds);
-  const points = createPolylinePoints(drawableValues, bounds);
-  const latestValue = getLatestValue(finiteValues);
-  const stats = getMovingStats(finiteValues, PLOT_MOVING_WINDOW_S);
+  const colors = ["#0076c2", "#b54708", "#6941c6", "#067647", "#475467"];
+  const dashes = ["", "8 4", "2 4", "10 3 2 3", "4 3"];
   const yTicks = [bounds.maxValue, 0.5 * (bounds.maxValue + bounds.minValue), bounds.minValue];
 
   return (
@@ -129,12 +139,9 @@ function MiniPlot(props: { series: PlotSeries }) {
           <h3>{series.title}</h3>
           <span>{series.unit}</span>
         </div>
-        <div className="mini-plot-values">
-          <strong>inst {formatValue(latestValue)}</strong>
-          <span className="moving-average-value">avg {formatValue(stats.average)}</span>
-          <span className="moving-std-value">std {formatValue(stats.standardDeviation)}</span>
-        </div>
+        {lines.length === 1 && <strong>{formatValue(series.values.at(-1)?.value)}</strong>}
       </div>
+      {finiteValues.length === 0 && <p className="setting-timing">No active signal in this history</p>}
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={series.title}>
         <rect
           className="plot-area"
@@ -143,10 +150,11 @@ function MiniPlot(props: { series: PlotSeries }) {
           width={WIDTH - PADDING_LEFT - PADDING_RIGHT}
           height={HEIGHT - PADDING_TOP - PADDING_BOTTOM}
         />
-        {yTicks.map((tickValue) => {
+        {/* Stable axis positions reuse nodes even when the scale changes. */}
+        {yTicks.map((tickValue, index) => {
           const y = scaleY(tickValue, bounds);
           return (
-            <g key={tickValue}>
+            <g key={index}>
               <line
                 className="plot-grid-line"
                 x1={PADDING_LEFT}
@@ -174,7 +182,11 @@ function MiniPlot(props: { series: PlotSeries }) {
           x2={PADDING_LEFT}
           y2={HEIGHT - PADDING_BOTTOM}
         />
-        <polyline className="plot-line" points={points} fill="none" />
+        {lines.flatMap((line, index) => finitePlotSegments(line.values).map((segment, part) =>
+          segment.length === 1 ? <circle key={index + "-" + part} cx={scaleX(segment[0].timeS, bounds)}
+            cy={scaleY(segment[0].value, bounds)} r="3" fill={colors[index % colors.length]} /> :
+          <path key={index + "-" + part} className="plot-line" d={createLinePath(segment, bounds)} fill="none"
+            style={{ stroke: colors[index % colors.length] }} strokeDasharray={dashes[index % dashes.length]} />))}
         <text className="plot-tick-label" x={PADDING_LEFT} y={HEIGHT - 13} textAnchor="middle">
           {formatTime(bounds.minTimeS)}
         </text>
@@ -190,63 +202,44 @@ function MiniPlot(props: { series: PlotSeries }) {
           time [s]
         </text>
       </svg>
+      {(lines.length > 1 || showStatistics) && <ul className="plot-legend" aria-label={series.title + " signals"}>
+        {lines.map((line, index) => {
+          const stats = showStatistics ?
+            getMovingStats(getFiniteValues(line.values), PLOT_MOVING_WINDOW_S, line.values.at(-1)?.timeS) : undefined;
+          return <li key={line.label}>
+            <svg width="24" height="10" aria-hidden="true"><line x1="0" y1="5" x2="24" y2="5"
+              stroke={colors[index % colors.length]} strokeWidth="2.5" strokeDasharray={dashes[index % dashes.length]} /></svg>
+            <span>{line.label}</span><strong>{formatValue(line.values.at(-1)?.value)} {series.unit}</strong>
+            {stats && <small>avg {formatValue(stats.average)} · std {formatValue(stats.standardDeviation)}</small>}
+          </li>;
+        })}
+      </ul>}
     </article>
   );
 }
 
-function createPolylinePoints(values: PlotPoint[], bounds: PlotBounds): string {
+function createLinePath(values: PlotPoint[], bounds: PlotBounds): string {
+  // Keep every sample, but round DRAWING coordinates to 0.01 SVG units.
+  // This reduces per-update string size and uses a path instead of an SVG
+  // point list. Physical values, axis bounds and statistics retain precision.
   return values
-    .map((point) => `${scaleX(point.timeS, bounds)} ${scaleY(point.value, bounds)}`)
-    .join(" ");
-}
-
-function downsamplePlotPoints(values: PlotPoint[], maxPoints: number): PlotPoint[] {
-  if (values.length <= maxPoints) {
-    return values;
-  }
-
-  const downsampledValues: PlotPoint[] = [];
-  const lastIndex = values.length - 1;
-
-  for (let i = 0; i < maxPoints; i += 1) {
-    const sourceIndex = Math.round((i / (maxPoints - 1)) * lastIndex);
-    downsampledValues.push(values[sourceIndex]);
-  }
-
-  return downsampledValues;
-}
-
-function getLatestValue(values: PlotPoint[]): number | undefined {
-  return values.length === 0 ? undefined : values[values.length - 1].value;
+    .map((point, index) => `${index === 0 ? "M" : "L"}${scaleX(point.timeS, bounds).toFixed(2)} ${scaleY(point.value, bounds).toFixed(2)}`)
+    .join("");
 }
 
 function getFiniteValues(values: PlotPoint[]): PlotPoint[] {
   return values.filter((point) => Number.isFinite(point.timeS) && Number.isFinite(point.value));
 }
 
-function getDrawableValues(values: PlotPoint[], bounds: PlotBounds): PlotPoint[] {
-  if (values.length === 0) {
-    return [];
-  }
-
-  if (values.length === 1) {
-    return [
-      { timeS: bounds.minTimeS, value: values[0].value },
-      { timeS: bounds.maxTimeS, value: values[0].value },
-    ];
-  }
-
-  return values;
-}
-
-function getMovingStats(values: PlotPoint[], windowS: number): MovingStats {
+function getMovingStats(values: PlotPoint[], windowS: number, latestTimeS?: number): MovingStats {
   const latestValue = values.length === 0 ? undefined : values[values.length - 1];
 
   if (latestValue === undefined) {
     return { average: Number.NaN, standardDeviation: Number.NaN };
   }
 
-  const minTimeS = latestValue.timeS - windowS;
+  // Anchor to the displayed time even if the latest signal is unavailable.
+  const minTimeS = (latestTimeS ?? latestValue.timeS) - windowS;
   let sum = 0;
   let sumSquares = 0;
   let count = 0;
@@ -281,18 +274,15 @@ function getBounds(values: PlotPoint[]): PlotBounds {
     return { minTimeS: 0, maxTimeS: 1, minValue: 0, maxValue: 1 };
   }
 
-  const finiteValues = getFiniteValues(values);
+  // The caller already filtered missing values across all overlaid lines.
+  let minTimeS = values[0].timeS;
+  let maxTimeS = minTimeS;
+  let minValue = values[0].value;
+  let maxValue = values[0].value;
 
-  if (finiteValues.length === 0) {
-    return { minTimeS: 0, maxTimeS: 1, minValue: 0, maxValue: 1 };
-  }
-
-  const minTimeS = finiteValues[0].timeS;
-  const maxTimeS = finiteValues[finiteValues.length - 1].timeS;
-  let minValue = finiteValues[0].value;
-  let maxValue = finiteValues[0].value;
-
-  for (const point of finiteValues) {
+  for (const point of values) {
+    minTimeS = Math.min(minTimeS, point.timeS);
+    maxTimeS = Math.max(maxTimeS, point.timeS);
     minValue = Math.min(minValue, point.value);
     maxValue = Math.max(maxValue, point.value);
   }

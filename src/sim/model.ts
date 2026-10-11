@@ -1,4 +1,4 @@
-import type { AeroPerformanceTable } from "./aero";
+import type { AeroPerformanceTable, AerodynamicOutputs } from "./aero";
 import { computeAerodynamicOutputs } from "./aero";
 import type { ControlInputs, EnvironmentInputs } from "./inputs";
 import type { SimulationOutputSnapshot } from "./outputs";
@@ -7,6 +7,9 @@ import type { TurbineState } from "./state";
 
 export interface SimulationStepOptions {
   dtS: number;
+  // Explicit transient-model override; ordinary generating physics is unchanged.
+  aerodynamics?: AerodynamicOutputs;
+  mechanicalBrakeTorqueNm?: number; // Rotor-side, positive opposing rotation.
 }
 
 export interface RelativeWindComputation {
@@ -98,10 +101,13 @@ export function stepSimulation(
   assertFinite("environment.wavePitchMomentNm", environment.wavePitchMomentNm);
   assertFinite("control.collectivePitchRad", control.collectivePitchRad);
   assertFinite("control.generatorTorqueNm", control.generatorTorqueNm);
+  const brakeTorqueNm = options.mechanicalBrakeTorqueNm ?? 0;
+  assertFinite("mechanicalBrakeTorqueNm", brakeTorqueNm);
+  if (brakeTorqueNm < 0) throw new Error("Mechanical brake torque must oppose rotation [N m].");
 
 const relativeWind = computeRelativeWind(state, environment, params);
 
-const aero = computeAerodynamicOutputs(
+const aero = options.aerodynamics ?? computeAerodynamicOutputs(
   aeroTable,
   {
     rotorSpeedRadPerSec: state.rotorSpeedRadPerSec,
@@ -115,7 +121,7 @@ const aero = computeAerodynamicOutputs(
 );
 
   const rotorAccelerationRadPerSec2 =
-    (aero.torqueNm - control.generatorTorqueNm) / params.rotorInertiaKgM2;
+    (aero.torqueNm - control.generatorTorqueNm - brakeTorqueNm) / params.rotorInertiaKgM2;
 
   const nextRotorSpeedRadPerSec = Math.max(
     0,

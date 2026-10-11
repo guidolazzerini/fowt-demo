@@ -285,13 +285,25 @@ or electrical conversion model; default wave forcing is zero. The legacy
 crossover estimate excludes platform coupling and is unavailable for coordinated
 control. No automatic gain scheduling is planned.
 
-## Deployment, separately authorized
+## Deployment
 
-The existing `netlify.toml` specifies build command `npm run build`, publish
-directory `dist`, and Node version `22`. The aerodynamic JSON and bundled worker
-must be served with the application. No site, GitHub linkage or deployment was
-changed during integrated validation; the actual Netlify connection still needs
-review before publishing.
+Live simulator: **https://fowt-demo.netlify.app/**.
+
+Netlify deploys pushes to `main` in `guidolazzerini/fowt-demo`. The existing
+`netlify.toml` uses `npm run build`, publishes `dist`, and selects Node.js 22.
+No repository relinking was needed for the reviewed release (`b613bc4`).
+The live app, CSS, simulation worker and aerodynamic JSON were verified against
+the locally validated production build. Interactive Chrome and long-run memory
+checks remain the user-review procedure in the PDF guide.
+
+Before later releases, run `npm run check:all`, `npm run lint` and the production
+build. After deployment, run:
+
+```bash
+npm run check:preview -- https://fowt-demo.netlify.app/
+```
+
+This verifies assets and MIME types; it does not replace browser testing.
 
 Future control stages may separately add `K * Omega^2` torque control,
 constant-power above-rated operation or advanced control features.

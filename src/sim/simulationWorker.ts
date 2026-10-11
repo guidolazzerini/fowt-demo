@@ -57,7 +57,8 @@ let isRunning = false;
 let timerId: number | undefined;
 let aeroTable: AeroPerformanceTable | undefined;
 let params: TunableParameters = buildParameters(settings);
-let controllerConfig: LegacyTurbineControllerConfig | CoordinatedControllerConfig = buildControllerConfig(params, settings);
+// Temporary config before async table loading; Reset installs the selected mode.
+let controllerConfig: LegacyTurbineControllerConfig | CoordinatedControllerConfig = createLegacyTurbineControllerConfig(createPitchControllerConfig(params));
 let controllerState: LegacyTurbineControllerState | CoordinatedControllerState | undefined;
 let wind: WindDisturbance | undefined;
 let windSample: WindDisturbanceSample | undefined;
@@ -277,9 +278,15 @@ function updateSettings(partialSettings: Partial<SimulationUiSettings>): void {
     );
   }
 
-  if ((!operatingSequence || operatingSequence.phase === "generating") && !limitsNeedReset && state && controllerState?.strategy === "coordinated-tsr-pi" && controllerConfig.strategy === "coordinated-tsr-pi" &&
-    (["pitchKp", "pitchKi", "torqueKpNmsPerRad", "torqueKiNmPerRad", "floatingFeedbackEnabled", "platformPitchRateGainS",
-      "smoothingEnabled", "torqueReferenceShiftGain", "pitchReferenceShiftGain"] as const).some(key => settings[key] !== previousSettings[key])) {
+  // Saved manual gains are inactive while scheduling; changing them must not
+  // disturb the effective controller. Mode/smoother changes still retune once.
+  const coordinatedTuningChanged =
+    (["smoothingEnabled", "torqueReferenceShiftGain", "pitchReferenceShiftGain", "gainSchedulingEnabled"] as const)
+      .some(key => settings[key] !== previousSettings[key]) ||
+    (!settings.gainSchedulingEnabled &&
+      (["pitchKp", "pitchKi", "torqueKpNmsPerRad", "torqueKiNmPerRad", "floatingFeedbackEnabled", "platformPitchRateGainS"] as const)
+        .some(key => settings[key] !== previousSettings[key]));
+  if ((!operatingSequence || operatingSequence.phase === "generating") && !limitsNeedReset && state && controllerState?.strategy === "coordinated-tsr-pi" && controllerConfig.strategy === "coordinated-tsr-pi" && coordinatedTuningChanged) {
     controllerState = retuneCoordinatedControllerState(controllerState, state.rotorSpeedRadPerSec, controllerConfig);
   }
 
@@ -842,7 +849,7 @@ function buildControllerConfig(
   if (nextSettings.strategy === "coordinated-tsr-pi") {
     if (!aeroTable) throw new Error("Coordinated control requires the aerodynamic table.");
     // The cut-out normalization uses the reference operating point, independent
-    // of student actuator-limit edits. Those limits still constrain the model.
+    // of user actuator-limit edits. Those limits still constrain the model.
     const config = createCoordinatedControllerConfig(DEFAULT_TUNABLE_PARAMETERS, aeroTable, {
       torqueKpNmsPerRad: nextSettings.torqueKpNmsPerRad, torqueKiNmPerRad: nextSettings.torqueKiNmPerRad,
       pitchKpS: nextSettings.pitchKp, pitchKi: nextSettings.pitchKi,
@@ -854,6 +861,7 @@ function buildControllerConfig(
     config.minimumPitch = { ...config.minimumPitch, minPitchRad: nextParams.minPitchRad, maxPitchRad: nextParams.maxPitchRad,
       maxPitchRateRadPerSec: nextParams.maxPitchRateRadPerSec };
     config.smoother.enabled = nextSettings.smoothingEnabled;
+    config.gainScheduling = nextSettings.gainSchedulingEnabled;
     return config;
   }
   return createLegacyTurbineControllerConfig({
@@ -900,6 +908,7 @@ function sanitiseSettings(nextSettings: SimulationUiSettings): SimulationUiSetti
     strategy: nextSettings.strategy === "coordinated-tsr-pi" ? nextSettings.strategy : "legacy-above-rated",
     controllerWindSource: nextSettings.controllerWindSource === "coflex-estimate" ? "coflex-estimate" : "simulated-free-stream",
     smoothingEnabled: Boolean(nextSettings.smoothingEnabled),
+    gainSchedulingEnabled: Boolean(nextSettings.gainSchedulingEnabled),
     startupShutdownEnabled: nextSettings.strategy === "coordinated-tsr-pi" && Boolean(nextSettings.startupShutdownEnabled),
     stepsPerWorkerTick: Math.round(bounded.stepsPerWorkerTick),
     windMode: ["constant", "gust", "random"].includes(nextSettings.windMode) ? nextSettings.windMode : "constant",

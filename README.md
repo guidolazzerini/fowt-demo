@@ -1,7 +1,7 @@
 # Floating Offshore Wind Turbine Browser Demo
 
-An educational simulator for exploring floating-wind turbine dynamics and manually
-chosen controller gains. React and TypeScript provide the interface; a Web Worker
+An educational simulator for exploring floating-wind turbine dynamics, manual
+tuning and optional wind-based gain scheduling. React and TypeScript provide the interface; a Web Worker
 runs the same turbine controller used by the offline scenario checks.
 
 The model combines steady aerodynamic lookup tables, rigid rotor-speed dynamics,
@@ -23,10 +23,10 @@ operating system; do not copy or commit `node_modules`.
 
 To try coordinated generating operation:
 
-1. In **Control strategy**, select **Coordinated TSR PI**.
-2. In **Gains**, select **Fixed reference** and click **Apply SUGGESTED gains**.
-   Merely selecting a suggestion does not apply it. Switching strategies retains
-   the current gains, including the legacy defaults on a fresh page.
+1. A fresh page starts with **Coordinated TSR PI**, manual gains and the stable demo baseline.
+2. In **Gains**, keep Manual for tuning, or select **Automatic · demo wind schedule**.
+   Manual suggestions offer the stable baseline or a one-time copy for current filtered wind.
+   Click **Apply SUGGESTED gains** to apply a suggestion; selecting it only previews it.
 3. In **Environment**, choose Constant wind at 5 m/s. Click **Reset**, then **Start**.
 4. Expect approximately 5 rpm, 2.994 MN m generator torque and 1.568 MW generator
    mechanical power at this equilibrium. Try 18 m/s after Reset: approximately
@@ -52,8 +52,8 @@ To regenerate the PDF with a Python environment containing matplotlib:
 
 | Mode | Supported free-stream wind | Control behavior |
 |---|---|---|
-| Legacy above-rated (initial selection) | 10–20 m/s | Pitch PI, fixed 7.55 rpm reference and constant rated generator torque |
-| Coordinated TSR PI | 3–25 m/s | TSR-tracking torque PI and pitch PI, IEA low-wind pitch floor, optional ROSCO set-point smoothing |
+| Coordinated TSR PI (default) | 3–25 m/s | TSR-tracking torque PI and pitch PI, IEA low-wind pitch floor, optional ROSCO set-point smoothing and gain scheduling |
+| Legacy above-rated (Advanced disclosure) | 10–20 m/s | Pitch PI, fixed 7.55 rpm reference and constant rated generator torque |
 
 Both coordinated loops run through transition. Their references are coordinated
 by the smoother rather than a hard wind-speed switch. Above rated, the operating
@@ -89,7 +89,7 @@ Estimator Ki may be zero; Kp must remain positive (UI minimum 0.01 m/rad).
 Ki = 0 removes the integral contribution. Switching to it adjusts the internal
 speed estimate to preserve the current wind output, without keeping a hidden bias.
 Defaults are fixed demonstrator suggestions: Kp = 100 m/rad, Ki = 5 m/(rad s),
-initial guess = 8 m/s. There is no automatic gain scheduling. The estimate is held
+initial guess = 8 m/s. Estimator gains remain manual in both gain modes. The estimate is held
 during startup/shutdown and outside the table's speed/pitch range. Poor initial
 guesses or gains can fail to converge; `tracking` is not an accuracy guarantee.
 See [equations and limitations](docs/coflex-wind-estimator.md) and
@@ -145,7 +145,7 @@ also cancels a waiting request.
 - **Load and capture:** after 0.5 s above 4.75 rpm, apply generator load with a
   20 s smooth ramp. Model-based pitch control approaches the generating speed
   with a 10 s capture time constant. Within 1% speed error for 2 s, hand over to
-  the student's PI gains with matched controller states. Each startup stage has
+  the user's PI gains with matched controller states. Each startup stage has
   a 1,200 s timeout; unfavorable limits/disturbances may prevent startup.
 - **Shutdown:** slew pitch toward 90° at up to 2°/s (or a slower user rate limit),
   ramp generator torque to zero at up to 2 MN m/s, and coast down. Apply a
@@ -181,14 +181,25 @@ prediction. Pitch may exceed the generating limit during startup/shutdown, up
 to 90°. Motoring, electrical conversion, realistic friction and brake heating
 are not modeled. See [research, equations and validation](docs/startup-shutdown.md).
 
-## Student gains and live settings
+## User gains and live settings
 
-**There is no automatic gain scheduling.** SUGGESTED values are optional starting
-points, applied only by the student's explicit action. Wind and operating-region
-changes never select or overwrite gains. Arbitrary combinations may oscillate or
-become unstable; observing that behavior is part of the demonstrator.
+**Manual is the default.** Its gains stay fixed until the user changes them.
+SUGGESTED offers **Stable demo baseline · all winds** or **For current filtered wind**;
+Apply makes a one-time copy, including the floating-feedback switch. These are
+demonstrator suggestions, not published ROSCO reference gains.
 
-The coordinated fixed reference uses:
+**Automatic · demo wind schedule** interpolates pitch PI and floating-feedback
+gains using the same 5 s filtered selected wind as torque control. With COFLEX
+selected, that signal is estimated rotor-effective wind. Torque gains remain at
+the baseline values; estimator and smoothing gains stay manual. Scheduled fields
+display the applied values and are read-only. Switching back restores saved
+manual settings without Reset. Both modes can be compared with identical wind.
+See [the schedule, literature comparison and test results](docs/gain-scheduling.md).
+
+Arbitrary manual combinations may oscillate or become unstable; observing that
+behavior is part of the demonstrator.
+
+The stable demo baseline uses:
 
 | Setting | Value | Units shown in the UI |
 |---|---:|---|
@@ -200,16 +211,17 @@ The coordinated fixed reference uses:
 | Pitch-reference smoothing gain | 0.001 | dimensionless |
 | Floating feedback | Off | gain 0 s |
 
-Legacy starts with pitch gains 1.50 / 0.05. Suggestions for individual operating
-points and their tracking/motion trade-offs are documented in
-[the fixed-gain experiments](docs/step5a-suggested-gains.md).
+**Control strategy → Advanced: legacy controller → Load legacy reference** restores
+the historical pitch gains 1.50 / 0.05 with floating feedback off; then Reset.
+The historical [fixed-gain experiments](docs/step5a-suggested-gains.md) remain available.
 
 | Change | When it applies |
 |---|---|
 | Pitch/torque gains, active smoothing settings, floating feedback | Live; wind realization and filter history are preserved |
+| Gain mode | Live; retains saved manual gains and wind/filter history; restores manual gains on exit |
 | Active wind settings | Live; reconfigures the wind process at the current simulation time |
 | Wind settings irrelevant to the selected wind mode | No effect on the current wind process |
-| Strategy | Pauses; requires Reset; retains student gains |
+| Strategy | Pauses; requires Reset; retains user gains |
 | Startup/shutdown option | Pauses; requires Reset; enabled only for coordinated mode |
 | Pitch limits or pitch rate limit | Coordinated: pauses and requires Reset. Legacy: live |
 | Initial collective pitch | Legacy: next Reset only; inactive in coordinated mode |
@@ -271,12 +283,13 @@ npm run preview
 | `check:controls` | React static markup, tab/input contracts, diagnostic conversions and compact SVG paths |
 | `check:startup-shutdown` | Six startup/generating/shutdown cycles, actuator slew, parking brake, boundary aborts, power signs and timestep sensitivity |
 | `check:wind-estimator` | COFLEX equations and comparison isolation; estimated-wind control at 3–25 m/s, transitions, turbulence, startup and timestep checks |
+| `check:gain-scheduling` | 44 scheduled scenarios, 12 identical-wind comparisons, half-timestep crossing, startup/shutdown, integral continuity and actuator limits |
 
 Worker tests use a deterministic manual clock. Static React tests verify markup;
 they do **not** test browser clicks, rendering performance or Chrome memory.
 The historical smoother suite deliberately retains a poorly damped old gain
 combination and reports its oscillation; this is distinct from the suggested
-fixed reference. Passing tests do not guarantee all student gains are stable.
+fixed reference. Passing tests do not guarantee all user gains are stable.
 
 `build` includes TypeScript checking and generates `dist`; preview normally serves
 it at http://localhost:4173. To preserve an existing `dist`, use
@@ -304,6 +317,7 @@ not yet been confirmed. See [Step 9's review checklist](docs/step9-validation.md
 | `src/sim/turbineController.ts` | Shared entry point for worker and offline controller stepping |
 | `src/sim/controller.ts`, `torqueController.ts`, `coordinatedController.ts`, `setpointSmoother.ts` | Pitch PI, torque PI and coordinated references |
 | `src/sim/belowRatedPitch.ts`, `suggestedGains.ts` | Low-wind pitch schedule and manually applied gain catalog |
+| `src/sim/gainSchedule.ts` | Shared interpolated pitch/floating gain suggestions and optional automatic schedule |
 | `src/sim/model.ts`, `aero.ts`, `wind.ts` | Rotor/platform physics, aerodynamic interpolation and disturbances |
 | `src/sim/windEstimator.ts` | Shared COFLEX observer and explicit control-input selection |
 | `src/sim/simulation.ts`, `src/dev/`, `scripts/` | Offline scenarios and repeatable checks |
@@ -314,7 +328,8 @@ Stage documents record decisions at that stage; this README describes the curren
 integrated behavior. The model has no blade/tower flexibility, full hydrodynamics,
 or electrical conversion model; default wave forcing is zero. The legacy
 crossover estimate excludes platform coupling and is unavailable for coordinated
-control. No automatic gain scheduling is planned.
+control. The optional gain schedule is tested for this simplified model; it is not
+a reproduction or validation of the published ROSCO controller.
 
 ## Deployment
 

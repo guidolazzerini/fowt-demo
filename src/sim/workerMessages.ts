@@ -14,6 +14,7 @@ export const TORQUE_KI_MAX = SETTING_RANGES.torqueKiNmPerRad.max;
 export interface SimulationUiSettings {
   strategy: BrowserStrategy;
   controllerWindSource: ControllerWindSource;
+  gainSchedulingEnabled: boolean;
   windEstimatorKp: number; // m/rad
   windEstimatorKi: number; // m/(rad s)
   windEstimatorInitialMps: number; // Independent guess, applied on Reset.
@@ -56,7 +57,8 @@ export interface ControllerBandwidthEstimate {
 }
 
 export const DEFAULT_SIMULATION_UI_SETTINGS: SimulationUiSettings = {
-  strategy: "legacy-above-rated",
+  strategy: "coordinated-tsr-pi",
+  gainSchedulingEnabled: false,
   controllerWindSource: "simulated-free-stream",
   windEstimatorKp: DEFAULT_WIND_ESTIMATOR_TUNING.kpMPerRad,
   windEstimatorKi: DEFAULT_WIND_ESTIMATOR_TUNING.kiMPerRadSec,
@@ -77,8 +79,8 @@ export const DEFAULT_SIMULATION_UI_SETTINGS: SimulationUiSettings = {
   gustStartTimeS: 30,
   gustDurationS: 5,
 
-  pitchKp: 1.50,
-  pitchKi: 0.05,
+  pitchKp: 0.60,
+  pitchKi: 0.015,
   initialCollectivePitchDeg: 4.10,
   minPitchDeg: 0,
   maxPitchDeg: 30,

@@ -141,7 +141,7 @@ alone does not establish adequate damping across 3–25 m/s or all gain settings
 
 Step 5a assesses fixed pitch gains and floating feedback across operating points
 and provides manually selected SUGGESTED combinations. Automatic gain scheduling
-is excluded by the teaching requirement: students own the gains throughout an
+is excluded by the teaching requirement: the user owns the gains throughout an
 experiment. Startup, shutdown, boundary hysteresis, browser controls, and
 deployment remain for their separately authorized steps.
 

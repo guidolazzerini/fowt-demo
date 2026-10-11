@@ -131,14 +131,14 @@ export async function runSuggestedGainChecks(sweep = false): Promise<void> {
   const rise: WindDisturbanceConfig = { ...crossing, meanWindSpeedMps: 9, gustAmplitudeMps: 4 };
   settled(run(reference, "SUGGESTED reference upward crossing", rise, 1600));
 
-  // A student's arbitrary combination is retained exactly; the catalog is not
+  // A user's arbitrary combination is retained exactly; the catalog is not
   // a whitelist. This test crosses multiple listed wind points with that choice.
   const custom: FixedControllerGains = { ...SUGGESTED_REFERENCE_GAINS, pitchKpS: 0.73, pitchKi: 0.018,
     torqueKpNmsPerRad: 47e6, torqueKiNmPerRad: 2e6, torqueReferenceShiftGain: 0.7, pitchReferenceShiftGain: 0.002,
     floatingFeedbackEnabled: true, platformPitchRateGainS: 7 };
   const customConfig = withFixedControllerGains(reference, custom);
   assert(customConfig.pitch.pitchKp === custom.pitchKpS && reference.pitch.pitchKp === SUGGESTED_REFERENCE_GAINS.pitchKpS, "explicit selection does not mutate reference");
-  run(customConfig, "student-selected constants", rise, 1600);
+  run(customConfig, "user-selected constants", rise, 1600);
 
   const turbulentRows = [];
   let comparisonWind: number[] | undefined;

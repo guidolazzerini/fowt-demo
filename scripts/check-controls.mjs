@@ -44,6 +44,20 @@ try {
     }
   }
   assert.equal(updates, 0, 'Rendering settings must not write to the worker');
+  assert.equal(defaults.strategy, 'coordinated-tsr-pi');
+  assert.equal(defaults.gainSchedulingEnabled, false);
+  const scheduled = render({ ...defaults, gainSchedulingEnabled: true, meanWindSpeedMps: 18 });
+  assert(scheduled.includes('Advanced: legacy controller'));
+  assert(scheduled.includes('Stable demo baseline'));
+  assert(scheduled.includes('For current filtered wind'));
+  assert.match(scheduled, /<option value="scheduled" selected="">/);
+  assert.match(scheduled, /<button[^>]*disabled=""[^>]*>Apply SUGGESTED gains/);
+  for (const label of ['Pitch Kp', 'Pitch Ki', 'Torque Kp', 'Torque Ki', 'Pitch-rate gain']) {
+    const input = [...scheduled.matchAll(/<input[^>]*type="number"[^>]*>/g)]
+      .map(match => match[0]).find(input => input.includes(`aria-label="${label} (`));
+    assert(input?.includes('disabled=""'), `${label} shows an automatic read-only value`);
+  }
+  assert.match(scheduled, /aria-label="Pitch Kp \(s\)"[^>]*value="1.5"/);
   const operation = { activeStrategy: 'coordinated-tsr-pi', region: 'Unsupported operation',
     message: 'Set wind within 3.2–24.8 m/s and Reset.', canStart: false, requiresReset: true };
   const toolbar = renderToStaticMarkup(createElement(SimulationToolbar, { simulation: {

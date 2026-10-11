@@ -1,6 +1,6 @@
 import type { CoordinatedControllerConfig } from "./coordinatedController";
 
-/** Manually chosen constants for a student experiment. No wind lookup, runtime
+/** Manually chosen constants for a user experiment. No wind lookup, runtime
  * interpolation, or automatic gain changes are performed by this module.
  */
 export interface FixedControllerGains {

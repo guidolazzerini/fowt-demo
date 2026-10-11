@@ -57,7 +57,7 @@ restarts the current experiment; subsequent tab changes should not.
   less repeated text. No new diagnostic signals were added in this stage.
 - Input labels now address numeric inputs individually; sliders have separate
   accessible names. Numeric drafts are local until committed, avoiding a
-  temporary zero/minimum gain while the student types.
+  temporary zero/minimum gain while the user types.
 - settingRanges.ts is the single definition of numeric input bounds for the
   controls and worker validation. SI torque values are displayed in MN m units.
   Initial pitch also obeys current pitch limits; maximum pitch cannot be below
@@ -68,7 +68,7 @@ restarts the current experiment; subsequent tab changes should not.
   the existing configuration. Making these additional parameters adjustable
   would need controller initialization/validation work and is not implied by
   this presentation change.
-- The applied gains remain entirely student-owned, including through wind
+- The applied gains remain entirely user-owned, including through wind
   changes. Suggested gains still require the Apply action.
 
 ## Checks and limits of verification

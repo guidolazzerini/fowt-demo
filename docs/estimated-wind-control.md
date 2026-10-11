@@ -10,7 +10,7 @@ so the selector is disabled there; the observer still runs for comparison.
 The selected wind passes through the existing 5 s first-order filter and drives
 the TSR torque-speed reference and IEA low-wind pitch floor. Smoothing and both
 PIs retain their states. Changing source does not recreate the wind, reset the
-filter or alter any student gains. The filter smooths the input change; normal
+filter or alter any user gains. The filter smooths the input change; normal
 pitch and torque rate limits still apply. No gain scheduling has been added.
 
 Estimated control uses the last completed physics step's wind estimate, then the

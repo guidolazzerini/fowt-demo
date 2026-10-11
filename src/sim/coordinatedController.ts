@@ -1,12 +1,13 @@
 import { belowRatedPitchDemand, type BelowRatedPitchConfig } from "./belowRatedPitch";
 import type { ControllerWindSource } from "./windEstimator";
+import { suggestedGainsAtWind } from "./gainSchedule";
 import { createPitchControllerState, retunePitchControllerState, stepPitchController,
   type PitchControllerConfig, type PitchControllerMeasurements, type PitchControllerState } from "./controller";
 import { smoothSetpoints, type SetpointSmootherConfig } from "./setpointSmoother";
 import { createTorqueControllerState, filteredTorqueWind, stepTorqueController, torqueSpeedReference,
   type TorqueControllerConfig, type TorqueControllerState } from "./torqueController";
 
-/** Both loops always run; no wind-threshold switching or automatic gain scheduling. */
+/** Both loops always run; optional scheduling uses filtered wind, not region switching. */
 export interface CoordinatedControllerConfig {
   strategy: "coordinated-tsr-pi";
   torque: TorqueControllerConfig; // maxTorqueNm is the normal operating cap.
@@ -14,6 +15,7 @@ export interface CoordinatedControllerConfig {
   pitch: PitchControllerConfig;
   minimumPitch: BelowRatedPitchConfig;
   smoother: SetpointSmootherConfig;
+  gainScheduling?: boolean; // Explicit opt-in; manual configuration is retained.
 }
 
 export interface CoordinatedControllerState {
@@ -21,6 +23,16 @@ export interface CoordinatedControllerState {
   torque: TorqueControllerState;
   pitch: PitchControllerState;
   minimumPitchRad: number; // Floor used with the previous applied pitch command.
+  appliedPitchKi?: number; // Preserve integral OUTPUT when scheduled Ki changes.
+}
+
+function effectiveConfig(config: CoordinatedControllerConfig, windMps: number): CoordinatedControllerConfig {
+  if (!config.gainScheduling) return config;
+  const gains = suggestedGainsAtWind(windMps);
+  return { ...config,
+    torque: { ...config.torque, kpNmsPerRad: gains.torqueKpNmsPerRad, kiNmPerRad: gains.torqueKiNmPerRad },
+    pitch: { ...config.pitch, pitchKp: gains.pitchKpS, pitchKi: gains.pitchKi,
+      floatingFeedbackEnabled: gains.floatingFeedbackEnabled, platformPitchRateGainS: gains.platformPitchRateGainS } };
 }
 
 function validateConfig(config: CoordinatedControllerConfig): void {
@@ -46,6 +58,7 @@ function references(config: CoordinatedControllerConfig, windMps: number, pitchR
  */
 export function retuneCoordinatedControllerState(state: CoordinatedControllerState,
   rotorSpeedRadPerSec: number, config: CoordinatedControllerConfig): CoordinatedControllerState {
+  config = effectiveConfig(config, state.torque.filteredWindMps);
   const refs = references(config, state.torque.filteredWindMps, state.pitch.previousPitchRad,
     state.minimumPitchRad, state.torque.previousTorqueNm);
   const torque = createTorqueControllerState(config.torque, state.torque.filteredWindMps,
@@ -54,12 +67,13 @@ export function retuneCoordinatedControllerState(state: CoordinatedControllerSta
   const pitch = retunePitchControllerState(state.pitch, rotorSpeedRadPerSec, { ...config.pitch,
     minPitchRad: state.minimumPitchRad, trimPitchRad: Math.max(state.minimumPitchRad, config.pitch.trimPitchRad),
     rotorSpeedRefRadPerSec: refs.pitchSpeedRefRadPerSec });
-  return { ...state, torque, pitch };
+  return { ...state, torque, pitch, appliedPitchKi: config.pitch.pitchKi };
 }
 
 export function createCoordinatedControllerState(config: CoordinatedControllerConfig, initial: {
   windMps: number; rotorSpeedRadPerSec: number; pitchRad: number; torqueNm: number;
 }): CoordinatedControllerState {
+  config = effectiveConfig(config, initial.windMps);
   validateConfig(config);
   const minimumPitchRad = belowRatedPitchDemand(initial.windMps, config.minimumPitch).targetPitchRad;
   const pitchRad = Math.max(minimumPitchRad, Math.min(config.pitch.maxPitchRad, initial.pitchRad));
@@ -68,7 +82,7 @@ export function createCoordinatedControllerState(config: CoordinatedControllerCo
   const pitchConfig = { ...config.pitch, minPitchRad: minimumPitchRad,
     trimPitchRad: Math.max(minimumPitchRad, config.pitch.trimPitchRad), rotorSpeedRefRadPerSec: refs.pitchSpeedRefRadPerSec };
   const initialPitchState = createPitchControllerState(pitchConfig, pitchRad);
-  return { strategy: config.strategy, minimumPitchRad,
+  return { strategy: config.strategy, minimumPitchRad, appliedPitchKi: config.pitch.pitchKi,
     torque: createTorqueControllerState(config.torque, initial.windMps, initial.rotorSpeedRadPerSec, torqueNm,
       refs.torqueSpeedRefRadPerSec - refs.baseTorqueSpeedRefRadPerSec),
     // Below rated, let the negative speed error saturate at minimum pitch with
@@ -84,6 +98,14 @@ export function stepCoordinatedController(state: CoordinatedControllerState,
   validateConfig(config);
   const wind = filteredTorqueWind(state.torque.filteredWindMps, measurements.controlWindMps,
     config.torque.windFilterTimeConstantS, dtS);
+  config = effectiveConfig(config, wind);
+  // Do not rematch the entire PI every timestep: that would cancel feedback.
+  // Rescale only its stored error integral so Ki*integral remains continuous;
+  // the ordinary integration/anti-windup then runs once using the current gain.
+  if (config.gainScheduling && state.appliedPitchKi !== undefined && state.appliedPitchKi !== config.pitch.pitchKi) {
+    state = { ...state, pitch: { ...state.pitch,
+      integralErrorRad: state.pitch.integralErrorRad * state.appliedPitchKi / config.pitch.pitchKi } };
+  }
   const scheduledMinimumPitchRad = belowRatedPitchDemand(wind, config.minimumPitch).targetPitchRad;
   // A rising scheduled floor must respect actuator slew too. Feed this reachable
   // bound to the existing PI so anti-windup sees the constraint actually applied.
@@ -97,11 +119,16 @@ export function stepCoordinatedController(state: CoordinatedControllerState,
   const pitch = stepPitchController(state.pitch, measurements, { ...config.pitch,
     minPitchRad: minimumPitchRad, trimPitchRad: Math.max(minimumPitchRad, config.pitch.trimPitchRad),
     rotorSpeedRefRadPerSec: smoother.pitchSpeedRefRadPerSec }, dtS);
-  const nextState: CoordinatedControllerState = { strategy: config.strategy, torque: torque.state, pitch: pitch.state, minimumPitchRad };
+  const nextState: CoordinatedControllerState = { strategy: config.strategy, torque: torque.state, pitch: pitch.state, minimumPitchRad,
+    appliedPitchKi: config.pitch.pitchKi };
   return { state: nextState,
     control: { collectivePitchRad: pitch.control.collectivePitchRad, generatorTorqueNm: torque.torqueNm },
     diagnostics: { strategy: config.strategy, torque: torque.diagnostics, pitch: pitch.diagnostics,
       smoother, scheduledMinimumPitchRad, minimumPitchRad,
+      gains: { scheduled: Boolean(config.gainScheduling), windMps: wind,
+        pitchKpS: config.pitch.pitchKp, pitchKi: config.pitch.pitchKi,
+        floatingGainS: config.pitch.floatingFeedbackEnabled ? config.pitch.platformPitchRateGainS : 0,
+        torqueKpNmsPerRad: config.torque.kpNmsPerRad, torqueKiNmPerRad: config.torque.kiNmPerRad },
       torqueAtOperatingCap: torque.torqueNm >= config.torque.maxTorqueNm - 1e-6,
       pitchAtMinimum: pitch.control.collectivePitchRad <= minimumPitchRad + 1e-12 } };
 }

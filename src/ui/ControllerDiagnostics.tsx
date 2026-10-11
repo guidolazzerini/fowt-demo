@@ -75,6 +75,10 @@ export function DiagnosticContent({ history, operation, settings }: DiagnosticPr
       <div><dt>Active strategy</dt><dd>{strategyName(operation?.activeStrategy)}</dd></div>
       <div><dt>Selected strategy</dt><dd>{strategyName(settings.strategy)}</dd></div>
       <div><dt>Operating region</dt><dd>{operation?.region ?? "—"}</dd></div>
+      {lastSample.controllerDiagnostics?.strategy === "coordinated-tsr-pi" && <div><dt>Applied gains</dt><dd>
+        {lastSample.controllerDiagnostics.gains.scheduled ? "Scheduled" : "Manual"} · pitch {lastSample.controllerDiagnostics.gains.pitchKpS.toFixed(2)} / {lastSample.controllerDiagnostics.gains.pitchKi.toFixed(3)} ·
+        floating {lastSample.controllerDiagnostics.gains.floatingGainS.toFixed(1)} s
+      </dd></div>}
       <div><dt>Latest controller wind input</dt><dd>{lastSample.controllerDiagnostics?.strategy === "coordinated-tsr-pi" ?
         (lastSample.controllerDiagnostics.torque.windInputSource === "coflex-estimate" ? "COFLEX estimated rotor-effective wind" : "Simulated free-stream wind") : "Inactive / awaiting generating control"}</dd></div>
     </dl>

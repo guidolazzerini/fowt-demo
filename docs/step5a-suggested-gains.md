@@ -1,10 +1,10 @@
-# Step 5a: SUGGESTED fixed gains for student experiments
+# Step 5a: SUGGESTED fixed gains for user experiments
 
-The demonstrator is intended for students to test different combinations.
+The demonstrator lets the user test different combinations.
 **There is no gain scheduling.** Wind changes, operating-region changes, and
 crossings of rated operation never select, interpolate, or apply different
 gains. A suggestion is an explicitly chosen starting point, not a restriction
-on which values students may enter.
+on which values the user may enter.
 
 ## Fixed reference and operating-point suggestions
 
@@ -83,7 +83,7 @@ model and should not be read as physical turbine prediction accuracy.
 
 Tests also cover slow crossings in both directions, a halved time step,
 identical turbulent disturbances across manually chosen combinations, actuator
-limits, and a custom student combination that is absent from the catalog.
+limits, and a custom user combination that is absent from the catalog.
 Configuration values and applied PI contributions are checked to confirm that
 wind changes do not alter the chosen Kp or Ki.
 
@@ -128,10 +128,10 @@ Geometry, actuator limits, and filter settings continue to come from `params`.
 
 ```ts
 const row = SUGGESTED_OPERATING_POINT_GAINS.find(item => item.id === "wind-12")!;
-const studentGains = { ...row.gains, pitchKpS: 0.73, pitchKi: 0.018 };
-const config = createCoordinatedControllerConfig(params, table, studentGains);
+const userGains = { ...row.gains, pitchKpS: 0.73, pitchKi: 0.018 };
+const config = createCoordinatedControllerConfig(params, table, userGains);
 const { scenario } = createCoordinatedScenario({
-  name: "Student fixed-gain experiment", params, aeroTable: table, config,
+  name: "User fixed-gain experiment", params, aeroTable: table, config,
   totalTimeS: 900, dtS: 0.02,
   wind: { mode: "constant", meanWindSpeedMps: 12 },
 });
@@ -140,7 +140,7 @@ const result = runSimulationScenario({ scenario, params, aeroTable: table });
 
 The catalog is imported from `src/sim/suggestedGains.ts`, the configuration and
 scenario factories from `src/sim/coordinated.ts`, and the runner from
-`src/sim/simulation.ts`. `withFixedControllerGains(config, studentGains)` is an
+`src/sim/simulation.ts`. `withFixedControllerGains(config, userGains)` is an
 alternative for configuring another offline experiment; it returns a new config
 and leaves the original and controller states untouched. Live gain-transfer and
 browser selection remain integration work, not something this helper performs.
@@ -148,7 +148,7 @@ browser selection remain integration work, not something this helper performs.
 ## Scope and next stage
 
 The current tests support these suggested starting values for the stated
-experiments. They do not establish stability for every student combination,
+experiments. They do not establish stability for every user combination,
 arbitrary disturbances, startup/shutdown, or operation outside 3–25 m/s.
 No automatic gain scheduler will be added. The next stage is Step 6 browser
 integration with explicit generating boundaries and user-owned gain values;

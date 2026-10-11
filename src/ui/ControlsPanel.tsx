@@ -4,12 +4,15 @@ import { SETTING_RANGES, type NumericSetting } from "../sim/settingRanges";
 import type { BrowserStrategy } from "../sim/generatingEnvelope";
 import { DEFAULT_TUNABLE_PARAMETERS as parameters } from "../sim/defaults";
 import { createBelowRatedControllerConfig } from "../sim/belowRated";
-import { SUGGESTED_REFERENCE_GAINS, SUGGESTED_OPERATING_POINT_GAINS } from "../sim/suggestedGains";
+import { SUGGESTED_REFERENCE_GAINS } from "../sim/suggestedGains";
 import { InfoDisclosure } from "./InfoDisclosure";
+import { DEMO_GAIN_SCHEDULE, suggestedGainsAtWind } from "../sim/gainSchedule";
+import type { SimulationScenarioSample } from "../sim/simulation";
 import { SliderRow } from "./SliderRow";
 
 interface ControlsPanelProps {
   settings: SimulationUiSettings;
+  latestSample?: SimulationScenarioSample;
   controllerBandwidthEstimate: ControllerBandwidthEstimate | undefined;
   onSettingsChange: (settings: Partial<SimulationUiSettings>) => void;
 }
@@ -23,12 +26,23 @@ type ControlTab = typeof tabs[number][0];
 // Read-only model values come from the same configuration used by the controller.
 const fixedTorque = createBelowRatedControllerConfig(parameters).torque;
 
-export function ControlsPanel({ settings, controllerBandwidthEstimate, onSettingsChange }: ControlsPanelProps) {
+export function ControlsPanel({ settings, latestSample, controllerBandwidthEstimate, onSettingsChange }: ControlsPanelProps) {
   // Presentation state only: selecting a tab never posts to the worker.
   const [activeTab, setActiveTab] = useState<ControlTab>("environment");
   const [suggestionId, setSuggestionId] = useState("reference");
   const tabButtons = useRef<(HTMLButtonElement | null)[]>([]);
   const coordinated = settings.strategy === "coordinated-tsr-pi";
+  const scheduled = coordinated && settings.gainSchedulingEnabled;
+  const sampled = latestSample?.controllerDiagnostics;
+  const currentWind = sampled?.strategy === "coordinated-tsr-pi" ? sampled.torque.filteredWindMps : settings.meanWindSpeedMps;
+  const currentSuggestion = suggestedGainsAtWind(currentWind);
+  const selectedSuggestion = suggestionId === "reference" ? SUGGESTED_REFERENCE_GAINS : currentSuggestion;
+  const activeGains = sampled?.strategy === "coordinated-tsr-pi" && sampled.gains.scheduled ? sampled.gains : undefined;
+  const display = scheduled ? { ...settings,
+    pitchKp: activeGains?.pitchKpS ?? currentSuggestion.pitchKpS, pitchKi: activeGains?.pitchKi ?? currentSuggestion.pitchKi,
+    torqueKpNmsPerRad: activeGains?.torqueKpNmsPerRad ?? currentSuggestion.torqueKpNmsPerRad,
+    torqueKiNmPerRad: activeGains?.torqueKiNmPerRad ?? currentSuggestion.torqueKiNmPerRad,
+    platformPitchRateGainS: activeGains?.floatingGainS ?? currentSuggestion.platformPitchRateGainS } : settings;
 
   function navigateTabs(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     const next = event.key === "ArrowRight" ? (index + 1) % tabs.length :
@@ -41,8 +55,7 @@ export function ControlsPanel({ settings, controllerBandwidthEstimate, onSetting
   }
 
   function applySuggestion() {
-    const gains = suggestionId === "reference" ? SUGGESTED_REFERENCE_GAINS :
-      SUGGESTED_OPERATING_POINT_GAINS.find(row => row.id === suggestionId)!.gains;
+    const gains = selectedSuggestion;
     onSettingsChange({ pitchKp: gains.pitchKpS, pitchKi: gains.pitchKi,
       torqueKpNmsPerRad: gains.torqueKpNmsPerRad, torqueKiNmPerRad: gains.torqueKiNmPerRad,
       floatingFeedbackEnabled: gains.floatingFeedbackEnabled, platformPitchRateGainS: gains.platformPitchRateGainS,
@@ -56,13 +69,13 @@ export function ControlsPanel({ settings, controllerBandwidthEstimate, onSetting
     const min = key === "initialCollectivePitchDeg" ? settings.minPitchDeg :
       key === "maxPitchDeg" ? Math.max(range.min, settings.minPitchDeg) : range.min;
     const max = key === "initialCollectivePitchDeg" ? settings.maxPitchDeg : range.max;
-    return <SliderRow label={label} value={settings[key] / scale} min={min / scale} max={max / scale}
+    return <SliderRow label={label} value={display[key] / scale} min={min / scale} max={max / scale}
       step={range.step / scale} unit={unit} disabled={disabled}
       onChange={value => onSettingsChange({ [key]: value * scale })} />;
   }
 
   return <section className="panel controls-panel" aria-labelledby="controls-heading">
-    <div className="panel-header"><h2 id="controls-heading">Experiment settings</h2><span className="small-label">Manual gains</span></div>
+    <div className="panel-header"><h2 id="controls-heading">Experiment settings</h2><span className="small-label">{scheduled ? "Scheduled gains" : "Manual gains"}</span></div>
     <div className="control-tabs" role="tablist" aria-label="Experiment settings">
       {tabs.map(([id, label], index) => <button key={id} type="button" role="tab"
         id={"tab-" + id} aria-controls={"panel-" + id} aria-selected={activeTab === id}
@@ -94,12 +107,18 @@ export function ControlsPanel({ settings, controllerBandwidthEstimate, onSetting
     </div>
 
     <div id="panel-strategy" role="tabpanel" aria-labelledby="tab-strategy" tabIndex={0} hidden={activeTab !== "strategy"}>
-      <p className="setting-timing">Strategy changes pause and require Reset</p>
+      <p className="setting-timing">{coordinated ? "Coordinated TSR PI · 3–25 m/s" : "Legacy above-rated is active · 10–20 m/s"}</p>
+      <InfoDisclosure label="Advanced: legacy controller">
+      <p>Kept for regression comparisons. Strategy changes pause and require Reset; gains are retained.</p>
       <label className="select-row"><span>Selected strategy</span><select value={settings.strategy}
         onChange={event => onSettingsChange({ strategy: event.currentTarget.value as BrowserStrategy })}>
         <option value="legacy-above-rated">Legacy above-rated · 10–20 m/s</option>
         <option value="coordinated-tsr-pi">Coordinated TSR PI · 3–25 m/s</option>
       </select></label>
+      <button type="button" onClick={() => onSettingsChange({ strategy: "legacy-above-rated", gainSchedulingEnabled: false,
+        pitchKp: 1.5, pitchKi: .05, floatingFeedbackEnabled: false, platformPitchRateGainS: 0 })}>Load legacy reference</button>
+      </InfoDisclosure>
+      {!coordinated && <button type="button" onClick={() => onSettingsChange({ strategy: "coordinated-tsr-pi" })}>Return to coordinated control</button>}
       <label className="select-row"><span>Controller wind input</span><select value={settings.controllerWindSource} disabled={!coordinated}
         onChange={event => onSettingsChange({ controllerWindSource: event.currentTarget.value === "coflex-estimate" ? "coflex-estimate" : "simulated-free-stream" })}>
         <option value="simulated-free-stream">Simulated free-stream wind</option>
@@ -130,28 +149,50 @@ export function ControlsPanel({ settings, controllerBandwidthEstimate, onSetting
       <InfoDisclosure label="How the strategies work">
         <p>Legacy: pitch PI with constant torque. Coordinated: TSR torque PI, pitch PI and an IEA low-wind pitch floor.
           Smoothing coordinates the speed references near rated operation.</p>
-        <p>Gains change only when you edit them or apply a SUGGESTED set. There is no automatic gain scheduling.</p>
+        <p>Manual gains stay fixed. Optional gain scheduling follows the filtered selected wind; choose it in Gains.</p>
       </InfoDisclosure>
     </div>
 
     <div id="panel-gains" role="tabpanel" aria-labelledby="tab-gains" tabIndex={0} hidden={activeTab !== "gains"}>
-      <p className="setting-timing">Gains apply live · no automatic scheduling</p>
+      <label className="select-row"><span>Gain mode</span><select disabled={!coordinated} value={scheduled ? "scheduled" : "manual"}
+        onChange={event => onSettingsChange({ gainSchedulingEnabled: event.currentTarget.value === "scheduled" })}>
+        <option value="manual">Manual · user-selected gains</option>
+        <option value="scheduled">Automatic · demo wind schedule</option>
+      </select></label>
+      <p className="setting-timing">{scheduled ? `Schedule at ${currentWind.toFixed(2)} m/s · manual values saved` : "Gains apply live · manual values stay fixed"}</p>
       {settings.startupShutdownEnabled && <p className="setting-timing">PI gains take control after startup handover</p>}
       {coordinated && <div className="suggestion-box">
         <label className="select-row"><span>SUGGESTED gains</span><select value={suggestionId} onChange={event => setSuggestionId(event.currentTarget.value)}>
-          <option value="reference">Fixed reference · pitch 0.60 / 0.015</option>
-          {SUGGESTED_OPERATING_POINT_GAINS.map(row => <option key={row.id} value={row.id}>{row.label}</option>)}
+          <option value="reference">Stable demo baseline · all winds</option>
+          <option value="current">For current filtered wind · {currentWind.toFixed(1)} m/s</option>
         </select></label>
-        <button type="button" onClick={applySuggestion}>Apply SUGGESTED gains</button>
+        <p className="setting-timing">Preview: pitch {selectedSuggestion.pitchKpS.toFixed(2)} / {selectedSuggestion.pitchKi.toFixed(3)} ·
+          floating {selectedSuggestion.platformPitchRateGainS.toFixed(1)} s</p>
+        <button type="button" disabled={scheduled} onClick={applySuggestion}>Apply SUGGESTED gains</button>
         <InfoDisclosure label="What Apply changes"><p>Apply sets all gains and the floating-feedback switch. Wind, strategy and the smoothing switch stay unchanged.
-          Selecting a suggestion alone does not apply it.</p></InfoDisclosure>
+          Selecting a suggestion alone does not apply it. The current-wind suggestion is a one-time copy, not automatic scheduling.</p>
+          <p>Demo baseline is our tested conservative set, not the published ROSCO controller.</p></InfoDisclosure>
       </div>}
-      <fieldset><legend>Pitch PI</legend>
-        {slider("pitchKp", "Pitch Kp", "s")}{slider("pitchKi", "Pitch Ki", "–")}
+      <InfoDisclosure label="Schedule and literature basis">
+        <p>Pitch PI and floating feedback interpolate on the same 5 s filtered wind used by torque control.
+          With COFLEX selected this is estimated rotor-effective wind. Endpoints are held outside 3–25 m/s.
+          Torque gains stay at 50.4 / 2.24; smoothing and estimator gains remain manual.</p>
+        <p>Floating feedback adapts <a href="https://wes.copernicus.org/articles/8/1299/2023/" target="_blank" rel="noreferrer">Guo &amp; Schlipf (2023)</a>, Table 4 (MVFB), capped at 20 s.
+          Pitch gains are demo suggestions. This is not the published ROSCO gain schedule.</p>
+        <table><thead><tr><th>Wind m/s</th><th>Pitch Kp / Ki</th><th>Floating s</th></tr></thead><tbody>
+          {DEMO_GAIN_SCHEDULE.map(row => <tr key={row.windMps}><td>{row.windMps}</td>
+            <td>{row.pitchKpS.toFixed(2)} / {row.pitchKi.toFixed(3)}</td><td>{row.floatingGainS}</td></tr>)}
+        </tbody></table>
+        <p>Switching off scheduling restores your saved manual values. Displayed gains are active generating gains;
+          before generating they are previews. Scheduling preserves the PI integral contribution.</p>
+        <p>Tested turbulence showed less speed error and platform motion, with more blade-pitch activity.</p>
+      </InfoDisclosure>
+      <fieldset disabled={scheduled}><legend>Pitch PI{scheduled && " · automatic"}</legend>
+        {slider("pitchKp", "Pitch Kp", "s", scheduled)}{slider("pitchKi", "Pitch Ki", "–", scheduled)}
       </fieldset>
-      <fieldset disabled={!coordinated}><legend>Torque PI{!coordinated && " · inactive"}</legend>
-        {slider("torqueKpNmsPerRad", "Torque Kp", "MN m s/rad", !coordinated, 1e6)}
-        {slider("torqueKiNmPerRad", "Torque Ki", "MN m/rad", !coordinated, 1e6)}
+      <fieldset disabled={!coordinated || scheduled}><legend>Torque PI{!coordinated && " · inactive"}{scheduled && " · schedule constant"}</legend>
+        {slider("torqueKpNmsPerRad", "Torque Kp", "MN m s/rad", !coordinated || scheduled, 1e6)}
+        {slider("torqueKiNmPerRad", "Torque Ki", "MN m/rad", !coordinated || scheduled, 1e6)}
       </fieldset>
       <fieldset disabled={!coordinated || !settings.smoothingEnabled}><legend>Smoothing{(!coordinated || !settings.smoothingEnabled) && " · inactive"}</legend>
         {slider("torqueReferenceShiftGain", "Torque-reference gain", "–", !coordinated || !settings.smoothingEnabled)}
@@ -171,7 +212,7 @@ export function ControlsPanel({ settings, controllerBandwidthEstimate, onSetting
             the current wind estimate when switching. Poor guesses or gains can prevent convergence.</p>
         </InfoDisclosure>
       </fieldset>
-      {(settings.pitchKp > 1.6 || settings.pitchKi > .05 || (settings.pitchKp > 1.5 && settings.pitchKi > .03)) &&
+      {(display.pitchKp > 1.6 || display.pitchKi > .05 || (display.pitchKp > 1.5 && display.pitchKi > .03)) &&
         <p className="setting-warning">High pitch gains can cause aggressive action or oscillation.</p>}
       <InfoDisclosure label="PI tuning and crossover">
         <p>Positive speed error increases braking torque or feathering pitch. With Ki &gt; 0, gain edits adjust integral state
@@ -185,12 +226,12 @@ export function ControlsPanel({ settings, controllerBandwidthEstimate, onSetting
     </div>
 
     <div id="panel-floating" role="tabpanel" aria-labelledby="tab-floating" tabIndex={0} hidden={activeTab !== "floating"}>
-      <p className="setting-timing">Feedback changes apply live</p>
-      <label className="checkbox-row"><input type="checkbox" checked={settings.floatingFeedbackEnabled}
+      <p className="setting-timing">{scheduled ? "Floating gain follows the wind schedule · change Gain mode to edit manually" : "Feedback changes apply live"}</p>
+      <label className="checkbox-row"><input type="checkbox" disabled={scheduled} checked={scheduled ? display.platformPitchRateGainS > 0 : settings.floatingFeedbackEnabled}
         onChange={event => onSettingsChange({ floatingFeedbackEnabled: event.currentTarget.checked })} /><span>Enable platform-pitch-rate feedback</span></label>
-      {slider("platformPitchRateGainS", "Pitch-rate gain", "s", !settings.floatingFeedbackEnabled)}
+      {slider("platformPitchRateGainS", "Pitch-rate gain", "s", scheduled || !settings.floatingFeedbackEnabled)}
       <dl className="model-values"><div><dt>Low-pass cutoff · fixed</dt><dd>{parameters.floatingFeedbackPitchRateLowPassCutoffHz} Hz</dd></div></dl>
-      {settings.floatingFeedbackEnabled && settings.platformPitchRateGainS > 10 &&
+      {!scheduled && settings.floatingFeedbackEnabled && settings.platformPitchRateGainS > 10 &&
         <p className="setting-warning">Large feedback gain can destabilize platform motion.</p>}
       <InfoDisclosure label="Feedback sign and filtering">
         <p>Filtered platform pitch rate adds to collective pitch. Gain units: seconds. Reduce the gain if platform motion grows.

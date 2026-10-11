@@ -51,7 +51,9 @@ function advance() {
 }
 
 try {
-  const { DEFAULT_SIMULATION_UI_SETTINGS: defaults } = await server.ssrLoadModule('/src/sim/workerMessages.ts');
+  const { DEFAULT_SIMULATION_UI_SETTINGS: uiDefaults } = await server.ssrLoadModule('/src/sim/workerMessages.ts');
+  // Preserve the historical legacy regression independently of the browser default.
+  const defaults = { ...uiDefaults, strategy: 'legacy-above-rated', pitchKp: 1.5, pitchKi: .05 };
   await server.ssrLoadModule('/src/sim/simulationWorker.ts');
   await request({ type: 'initialise' }, 'ready');
 

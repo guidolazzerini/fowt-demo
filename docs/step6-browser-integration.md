@@ -3,7 +3,7 @@
 The existing browser worker now offers **Coordinated TSR PI, 3–25 m/s**, alongside
 **Legacy above-rated, 10–20 m/s**. The app still opens in legacy mode with its
 original pitch gains. Selecting a strategy pauses and requires Reset, retaining
-all student gain values. No gain scheduling or automatic selection of suggestions
+all user gain values. No gain scheduling or automatic selection of suggestions
 has been added. Netlify configuration and deployment are unchanged.
 
 ## Try the local browser app
@@ -62,7 +62,7 @@ Tabs and additional diagnostic plots remain the subsequent steps.
 - Positive generator torque brakes the rotor. Normal operating torque cap is
   18.972112 MN m, below the separate 20 MN m absolute actuator ceiling. The
   smoothing pitch normalization remains the reference cut-out operating pitch,
-  approximately 22.898 degrees, independent of student pitch-limit edits.
+  approximately 22.898 degrees, independent of user pitch-limit edits.
 - Live gain, smoothing and floating-feedback edits preserve the wind generator
   and filter histories. Positive-Ki retuning matches current actuator commands
   as far as practical. Setting Ki to zero explicitly clears that integral;
@@ -81,7 +81,7 @@ Tabs and additional diagnostic plots remain the subsequent steps.
   the model. After a trip the display holds the last supported physical outputs
   and time, while exposing the triggering free-stream wind. Those frozen outputs
   are not a new aerodynamic solution at the out-of-range wind.
-- Startup, motoring and feathered shutdown are unsupported. Arbitrary student
+- Startup, motoring and feathered shutdown are unsupported. Arbitrary user
   gains can cause unstable behavior within the wind envelope; the table guard
   prevents continued integration beyond supported aerodynamic data.
 - The legacy one-loop crossover estimate is marked inapplicable for coordinated
@@ -123,7 +123,7 @@ and prints its known oscillation; this is distinct from the conservative suggest
 
 The 74-scenario suggested-gain suite checks the fixed conservative reference and
 manually selected rows, perturbation recovery, gusts, turbulence and both rated
-crossing directions. Its results support keeping gains fixed and student-owned;
+crossing directions. Its results support keeping gains fixed and user-owned;
 no automatic gain scheduling is needed for the tested experiments. See
 [Step 5a](step5a-suggested-gains.md) for quantitative tracking/motion trade-offs.
 They do not guarantee stability for every combination or disturbance.

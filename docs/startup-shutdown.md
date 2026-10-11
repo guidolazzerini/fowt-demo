@@ -22,7 +22,7 @@ The chosen sequence is a **simplified adaptation**, not the ROSCO implementation
 or an IEA-certified startup/shutdown model. The model-based speed-capture phase
 is our addition: an initial maximum-torque/free-wheel experiment oversped at
 higher wind during PI handover. The capture phase resolves that in the tested
-cases without changing the student's gains.
+cases without changing the user's gains.
 
 ## Averaged operating supervision
 
@@ -82,7 +82,7 @@ npm run preview -- --outDir .startup-preview.local --host 127.0.0.1 --port 4174 
    buttons do not feather, brake, or start the physical rotor.
 7. Disable the option and Reset to restore the previous equilibrium initialization
    and generating-envelope pause behavior. Strategy/option/pitch-limit changes
-   require Reset; gains remain student-owned.
+   require Reset; gains remain user-owned.
 
 During startup/shutdown the pitch can exceed the user-selected **generating**
 limit, up to the fixed 90° feather angle. Startup respects the selected pitch slew
@@ -162,7 +162,7 @@ Diagnostics flag the approximation; in-table generation retains the original mod
 The model remains one platform-pitch DOF plus a rigid rotor. It is suitable for
 sequence demonstrations, not validating shutdown loads, fatigue, extreme-storm
 survival or turbine safety. Slow pitch rates, infeasible limits and arbitrary
-student gains need not produce a successful startup or stable generation.
+user gains need not produce a successful startup or stable generation.
 
 ## Verification
 

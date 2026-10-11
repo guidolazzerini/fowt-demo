@@ -22,6 +22,7 @@ export function SimulationDashboard() {
       <div className="dashboard-grid">
         <ControlsPanel
           settings={simulation.settings}
+          latestSample={simulation.latestSample}
           controllerBandwidthEstimate={simulation.controllerBandwidthEstimate}
           onSettingsChange={simulation.updateSettings}
         />

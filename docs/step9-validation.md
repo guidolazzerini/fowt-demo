@@ -30,7 +30,7 @@ failure. Sequential execution also avoids concurrent Vite optimizer activity.
 | Smoothing | PASS: equations/normalizations, slow crossings in both directions, repeated turbulent crossings and identical disturbances with smoothing on/off |
 | Suggested gains | PASS: 74 fixed-gain scenarios covering recovery, gusts, turbulence, crossings and user-selected combinations; no automatic scheduling |
 | Browser worker integration | PASS: equilibrium initialization at 3, 5, 8, 10.5, 12, 18 and 25 m/s; 450 exact offline matches; 1,600 s crossings both directions; final recovery error below 0.005 rpm |
-| Added turbulent worker comparison | PASS: 1,200 s each at mean 10.5 m/s, TI 8%, seed 12345, smoothing on/off; identical wind samples, repeated region crossings, bounded torque/pitch and net actuator slew, unchanged student gains |
+| Added turbulent worker comparison | PASS: 1,200 s each at mean 10.5 m/s, TI 8%, seed 12345, smoothing on/off; identical wind samples, repeated region crossings, bounded torque/pitch and net actuator slew, unchanged user gains |
 | Live edits, strategies and boundaries | PASS: gain changes including Ki = 0, smoothing/feedback toggles, gain retention across strategies, both unclipped boundary trips, 0.2 m/s Reset hysteresis, infeasible limits, aerodynamic-table guard and worker range validation |
 | Controls and diagnostics | PASS: static React markup, five tab contracts, shared numeric ranges, hidden help, visible boundary message; 600 actual diagnostic samples, signal units and power, missing-data gaps and compact 600-point drawing |
 | Lint and TypeScript | PASS |
@@ -40,7 +40,7 @@ failure. Sequential execution also avoids concurrent Vite optimizer activity.
 The historical smoother comparison intentionally retains pitch gains 1.50/0.05
 with feedback off and reports their known oscillation. It is not the suggested
 coordinated fixed reference (0.60/0.015). Neither that comparison nor the passing
-suggestion checks guarantee stability for arbitrary student gains.
+suggestion checks guarantee stability for arbitrary user gains.
 
 The new turbulent worker case uses the browser's existing 2.5 s disturbance
 filter and unchanged 0.02 s integration timestep. It increases steps per worker

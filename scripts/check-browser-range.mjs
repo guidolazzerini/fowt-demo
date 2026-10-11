@@ -68,11 +68,17 @@ try {
   const { createWindEstimatorConfig, createWindEstimatorState, stepWindEstimator } = await server.ssrLoadModule('/src/sim/windEstimator.ts');
   await server.ssrLoadModule('/src/sim/simulationWorker.ts');
   await request({ type: 'initialise' }, 'ready');
+  assert.equal(latest.operation.activeStrategy, 'coordinated-tsr-pi');
+  assert.equal(defaults.gainSchedulingEnabled, false);
+  assert.equal(defaults.pitchKp, .6);
+  // Exercise the retained advanced legacy-to-coordinated switch explicitly.
+  await update({ strategy: 'legacy-above-rated' });
+  await reset();
   await start();
   runningSample();
   const selected = await update({ strategy: full.strategy });
   assert(!selected.isRunning && selected.operation.requiresReset);
-  assert.equal(selected.settings.pitchKp, defaults.pitchKp, 'Strategy selection must retain student gains');
+  assert.equal(selected.settings.pitchKp, defaults.pitchKp, 'Strategy selection must retain user gains');
   assert(!(await start()).isRunning, 'Pending strategy needs Reset');
 
   // Every requested equilibrium includes platform static deflection and uses
@@ -95,13 +101,16 @@ try {
 
   // Exact comparison includes nested controller references, saturation, and PI diagnostics.
   for (const source of ['simulated-free-stream', 'coflex-estimate']) {
+  for (const gainSchedulingEnabled of [false, true]) {
   for (const [mode, speed] of [['constant', 5], ['gust', 10.5], ['random', 18]]) {
-    await update({ ...full, controllerWindSource: source, windMode: mode, meanWindSpeedMps: speed, gustStartTimeS: 5, gustDurationS: 35, gustAmplitudeMps: 2 });
+    await update({ ...full, gainSchedulingEnabled, controllerWindSource: source, windMode: mode, meanWindSpeedMps: speed, gustStartTimeS: 5, gustDurationS: 35, gustAmplitudeMps: 2 });
     await reset();
     const wind = { mode, meanWindSpeedMps: speed };
     if (mode === 'gust') Object.assign(wind, { gustStartTimeSec: 5, gustDurationSec: 35, gustAmplitudeMps: 2 });
     if (mode === 'random') Object.assign(wind, { mode: 'turbulent', turbulenceIntensity: .06, seed: 12345, lowPassTimeConstantSec: 2.5 });
-    const { scenario } = createCoordinatedScenario({ name: 'browser parity', totalTimeS: 48, dtS: .02, wind, params, aeroTable: table });
+    const config = createCoordinatedControllerConfig(params, table);
+    config.gainScheduling = gainSchedulingEnabled;
+    const { scenario } = createCoordinatedScenario({ name: 'browser parity', totalTimeS: 48, dtS: .02, wind, params, aeroTable: table, config });
     scenario.windEstimator = createWindEstimatorConfig(params);
     scenario.controllerWindSource = source;
     const offline = runSimulationScenario({ scenario, params, aeroTable: table });
@@ -116,7 +125,8 @@ try {
     await stop();
   }
   }
-  console.log('PASS: exact full-range worker/offline parity (900 samples, both wind sources), Start/Stop resume');
+  }
+  console.log('PASS: exact full-range worker/offline parity (1800 samples, both wind sources, manual/scheduled gains), Start/Stop resume');
 
   for (const [speed, amplitude] of [[9, 4], [13, -4]]) {
     await update({ ...full, meanWindSpeedMps: speed, windMode: 'gust', gustAmplitudeMps: amplitude,
@@ -208,6 +218,33 @@ try {
     return samples;
   }
   const baseline = await replay();
+  for (const speed of [8, 18]) {
+    const reference = await replay(undefined, { meanWindSpeedMps: speed });
+    const switched = await replay({ 10: { gainSchedulingEnabled: true }, 70: { gainSchedulingEnabled: false } },
+      { meanWindSpeedMps: speed });
+    assert.deepEqual(switched.map(s => s.windSpeedMps), reference.map(s => s.windSpeedMps));
+    assert(switched[11].controllerDiagnostics.gains.scheduled);
+    assert(!switched[71].controllerDiagnostics.gains.scheduled);
+    assert.equal(switched[71].controllerDiagnostics.gains.pitchKpS, full.pitchKp);
+    assert.equal(switched[71].controllerDiagnostics.gains.pitchKi, full.pitchKi);
+    assert.equal((await update({})).settings.pitchKp, full.pitchKp, 'Saved manual gains survive scheduling');
+    for (let i = 1; i < switched.length; i++) {
+      const dt = switched[i].timeS - switched[i - 1].timeS;
+      assert(Math.abs(switched[i].collectivePitchRad - switched[i - 1].collectivePitchRad) <= 5 * Math.PI / 180 * dt + 1e-12);
+      assert(Math.abs(switched[i].generatorTorqueNm - switched[i - 1].generatorTorqueNm) <= 2e6 * dt + 1e-6);
+    }
+  }
+  console.log('PASS: live scheduling on/off at 8/18 m/s, continuous commands, repeatable wind and restored manual gains');
+  const automaticReference = await replay(undefined, { gainSchedulingEnabled: true });
+  const inactiveManualEdits = await replay({ 10: { pitchKp: 1.1, pitchKi: 0, torqueKiNmPerRad: 0,
+    floatingFeedbackEnabled: true, platformPitchRateGainS: 3 } }, { gainSchedulingEnabled: true });
+  assert.deepEqual(inactiveManualEdits, automaticReference, 'Inactive manual gains must not retune the scheduled controller');
+  const automaticSourceSwitch = await replay({ 10: { controllerWindSource: 'coflex-estimate' },
+    70: { controllerWindSource: 'simulated-free-stream' } }, { gainSchedulingEnabled: true });
+  assert.deepEqual(automaticSourceSwitch.map(s => s.windSpeedMps), automaticReference.map(s => s.windSpeedMps));
+  assert.equal(automaticSourceSwitch[11].controllerDiagnostics.torque.windInputSource, 'coflex-estimate');
+  assert.equal(automaticSourceSwitch[71].controllerDiagnostics.torque.windInputSource, 'simulated-free-stream');
+  console.log('PASS: scheduling ignores inactive manual edits and follows live wind-source selection without reseeding wind');
   for (const speed of [8, 18]) {
     const reference = await replay(undefined, { meanWindSpeedMps: speed });
     const switched = await replay({ 10: { controllerWindSource: 'coflex-estimate' },

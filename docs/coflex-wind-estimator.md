@@ -33,7 +33,7 @@ scheme is shared by worker and offline runner. Default dt is 0.02 s.
 With Ki > 0, Reset initializes predicted speed to measured speed and the wind integral to an
 independent 8 m/s guess. Fixed suggested gains are Kp = 100 m/rad and
 Ki = 5 m/(rad s), selected for this demonstrator, **not reported COFLEX paper gains**.
-Students can change both: **Kp > 0, Ki >= 0** (UI Kp minimum 0.01 m/rad).
+The user can change both: **Kp > 0, Ki >= 0** (UI Kp minimum 0.01 m/rad).
 With positive Ki, live gain changes shift the integral contribution to preserve
 the current estimate before the next step.
 

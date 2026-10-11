@@ -65,6 +65,7 @@ try {
   const table = await loadAeroTable(params.aero.filePath);
   const { createCoordinatedScenario, createCoordinatedControllerConfig } = await server.ssrLoadModule('/src/sim/coordinated.ts');
   const { runSimulationScenario } = await server.ssrLoadModule('/src/sim/simulation.ts');
+  const { createWindEstimatorConfig, createWindEstimatorState, stepWindEstimator } = await server.ssrLoadModule('/src/sim/windEstimator.ts');
   await server.ssrLoadModule('/src/sim/simulationWorker.ts');
   await request({ type: 'initialise' }, 'ready');
   await start();
@@ -93,13 +94,16 @@ try {
   console.log('PASS: generating initialization and 32 s steady operation at 3, 5, 8, 10.5, 12, 18, 25 m/s');
 
   // Exact comparison includes nested controller references, saturation, and PI diagnostics.
+  for (const source of ['simulated-free-stream', 'coflex-estimate']) {
   for (const [mode, speed] of [['constant', 5], ['gust', 10.5], ['random', 18]]) {
-    await update({ ...full, windMode: mode, meanWindSpeedMps: speed, gustStartTimeS: 5, gustDurationS: 35, gustAmplitudeMps: 2 });
+    await update({ ...full, controllerWindSource: source, windMode: mode, meanWindSpeedMps: speed, gustStartTimeS: 5, gustDurationS: 35, gustAmplitudeMps: 2 });
     await reset();
     const wind = { mode, meanWindSpeedMps: speed };
     if (mode === 'gust') Object.assign(wind, { gustStartTimeSec: 5, gustDurationSec: 35, gustAmplitudeMps: 2 });
     if (mode === 'random') Object.assign(wind, { mode: 'turbulent', turbulenceIntensity: .06, seed: 12345, lowPassTimeConstantSec: 2.5 });
     const { scenario } = createCoordinatedScenario({ name: 'browser parity', totalTimeS: 48, dtS: .02, wind, params, aeroTable: table });
+    scenario.windEstimator = createWindEstimatorConfig(params);
+    scenario.controllerWindSource = source;
     const offline = runSimulationScenario({ scenario, params, aeroTable: table });
     assert.deepEqual(latest.sample, offline.samples[0]);
     await start();
@@ -111,7 +115,8 @@ try {
     assert(runningSample().timeS > time);
     await stop();
   }
-  console.log('PASS: exact full-range worker/offline parity (450 samples), Start/Stop resume');
+  }
+  console.log('PASS: exact full-range worker/offline parity (900 samples, both wind sources), Start/Stop resume');
 
   for (const [speed, amplitude] of [[9, 4], [13, -4]]) {
     await update({ ...full, meanWindSpeedMps: speed, windMode: 'gust', gustAmplitudeMps: amplitude,
@@ -180,8 +185,8 @@ try {
     turbulentRuns[1][i].controllerDiagnostics.smoother.torqueSpeedRefRadPerSec), 'Smoothing must affect the reference');
   console.log('PASS: 1200 s near-rated turbulent worker runs, identical wind with smoothing on/off, repeated region crossings and actuator slew bounds');
 
-  async function replay(edits) {
-    await update({ ...full, windMode: 'random', meanWindSpeedMps: 12 });
+  async function replay(edits, overrides = {}) {
+    await update({ ...full, windMode: 'random', meanWindSpeedMps: 12, ...overrides });
     await reset();
     await start();
     const samples = [];
@@ -192,6 +197,10 @@ try {
         assert.equal(after.sample.timeS, before.timeS);
         assert.equal(after.sample.collectivePitchRad, before.collectivePitchRad);
         assert.equal(after.sample.generatorTorqueNm, before.generatorTorqueNm);
+        if (edits[i].controllerWindSource) {
+          assert.deepEqual(after.sample, before, 'Selecting a wind source preserves the current sample and states');
+          assert(after.isRunning && !after.operation.requiresReset);
+        }
       }
       samples.push(runningSample());
     }
@@ -199,8 +208,28 @@ try {
     return samples;
   }
   const baseline = await replay();
+  for (const speed of [8, 18]) {
+    const reference = await replay(undefined, { meanWindSpeedMps: speed });
+    const switched = await replay({ 10: { controllerWindSource: 'coflex-estimate' },
+      30: { windEstimatorKp: 150, windEstimatorKi: 8 },
+      45: { windEstimatorKi: 0 }, 55: { windEstimatorKp: 80 }, 65: { windEstimatorKi: 5 },
+      70: { controllerWindSource: 'simulated-free-stream' } }, { meanWindSpeedMps: speed });
+    assert.deepEqual(switched.map(s => s.windSpeedMps), reference.map(s => s.windSpeedMps));
+    assert.equal(switched[11].controllerDiagnostics.torque.windInputSource, 'coflex-estimate');
+    assert.equal(switched[71].controllerDiagnostics.torque.windInputSource, 'simulated-free-stream');
+  }
+  assert.equal((await update({ controllerWindSource: 'invalid-source' })).settings.controllerWindSource, 'simulated-free-stream');
+  const boundedEstimator = await update({ windEstimatorKp: 0, windEstimatorKi: 0 });
+  assert(boundedEstimator.settings.windEstimatorKp > 0);
+  assert.equal(boundedEstimator.settings.windEstimatorKi, 0);
   const initialOnly = await replay({ 10: { initialCollectivePitchDeg: 20 } });
   assert.deepEqual(initialOnly, baseline);
+  const estimatorInitialOnly = await replay({ 10: { windEstimatorInitialMps: 15 } });
+  assert.deepEqual(estimatorInitialOnly, baseline, 'Estimator initial guess applies only on Reset');
+  const estimatorTuned = await replay({ 10: { windEstimatorKp: 150, windEstimatorKi: 8 } });
+  const withoutEstimator = samples => samples.map(({ windEstimator: _estimate, ...rest }) => rest);
+  assert.deepEqual(withoutEstimator(estimatorTuned), withoutEstimator(baseline));
+  assert(estimatorTuned.some((s, i) => s.windEstimator.estimatedWindMps !== baseline[i].windEstimator.estimatedWindMps));
   const tuned = await replay({
     10: { torqueKpNmsPerRad: 40e6, torqueKiNmPerRad: 1e6, pitchKp: .8, pitchKi: .02 },
     25: { torqueKiNmPerRad: 0, pitchKi: 0 },
@@ -234,7 +263,7 @@ try {
     assert.equal(adjusted.torque.filteredWindMps, original.torque.filteredWindMps);
     assert.equal(adjusted.pitch.filteredPlatformPitchRateRadPerSec, original.pitch.filteredPlatformPitchRateRadPerSec);
     const result = stepCoordinatedController(adjusted, { rotorSpeedRadPerSec: omega,
-      platformPitchRateRadPerSec: 0, simulatedFreeStreamWindMps: 18 }, next, .02);
+      platformPitchRateRadPerSec: 0, controlWindMps: 18 }, next, .02);
     if (ki > 0) {
       assert(Math.abs(result.control.collectivePitchRad - original.pitch.previousPitchRad) <= ki * .03 * .02 + 1e-12);
       assert(Math.abs(result.control.generatorTorqueNm - original.torque.previousTorqueNm) < 1e-6, 'Torque stays at normal cap');
@@ -327,7 +356,7 @@ try {
   const { createOperatingSequence, requestStartup, stepOperatingSequence } = await server.ssrLoadModule('/src/sim/operatingSequence.ts');
   const { createCoordinatedControllerState } = await server.ssrLoadModule('/src/sim/coordinatedController.ts');
   const { OperatingSupervisor } = await server.ssrLoadModule('/src/sim/operatingSupervisor.ts');
-  const pendingStartup = await update({ ...full, windMode: 'constant', meanWindSpeedMps: 8, startupShutdownEnabled: true });
+  const pendingStartup = await update({ ...full, controllerWindSource: 'coflex-estimate', windMode: 'constant', meanWindSpeedMps: 8, startupShutdownEnabled: true });
   assert(pendingStartup.operation.requiresReset && !pendingStartup.isRunning);
   const parked = await reset();
   assert.equal(parked.operation.turbinePhase, 'parked');
@@ -342,10 +371,24 @@ try {
     controllerState: createCoordinatedControllerState(sequenceConfig, { windMps: 8, rotorSpeedRadPerSec: 0, pitchRad: 0, torqueNm: 0 }),
     config: sequenceConfig, params, table, environment: { windSpeedMps: 8, wavePitchMomentNm: 0 }, dtS: .02,
   };
+  const estimatorConfig = createWindEstimatorConfig(params);
+  let estimatorState = createWindEstimatorState(0, estimatorConfig, table), estimatorDiagnostics;
+  const estimatorStatuses = new Set();
   await request({ type: 'start-turbine' });
   for (let i = 0; i < 1000; i++) {
     const sample = advance();
-    for (let j = 0; j < 16; j++) sequenceRun = { ...sequenceRun, ...stepOperatingSequence(sequenceRun) };
+    for (let j = 0; j < 16; j++) {
+      const wasGenerating = sequenceRun.sequence.phase === 'generating';
+      sequenceRun = { ...sequenceRun, ...stepOperatingSequence({ ...sequenceRun,
+        generatingWindMps: estimatorState.estimatedWindMps, windInputSource: 'coflex-estimate' }) };
+      const estimate = stepWindEstimator(estimatorState, { rotorSpeedRadPerSec: sequenceRun.state.rotorSpeedRadPerSec,
+        pitchRad: sequenceRun.control.collectivePitchRad, generatorTorqueNm: sequenceRun.control.generatorTorqueNm,
+        generating: wasGenerating && sequenceRun.sequence.phase === 'generating' }, estimatorConfig, table, .02);
+      estimatorState = estimate.state;
+      estimatorDiagnostics = estimate.diagnostics;
+    }
+    assert.deepEqual(sample.windEstimator, estimatorDiagnostics);
+    estimatorStatuses.add(sample.windEstimator.status);
     assert.deepEqual(sample.operatingSequence, sequenceRun.sequence);
     assert.equal(sample.rotorSpeedRadPerSec, sequenceRun.state.rotorSpeedRadPerSec);
     assert.equal(sample.platformPitchRad, sequenceRun.state.platformPitchRad);
@@ -353,6 +396,7 @@ try {
     assert.equal(sample.generatorTorqueNm, sequenceRun.control.generatorTorqueNm);
   }
   assert.equal(latest.operation.turbinePhase, 'generating');
+  assert(estimatorStatuses.has('held') && estimatorStatuses.has('tracking'));
   await stop();
   assert.equal(tick, undefined);
   const shutdown = await request({ type: 'shutdown-turbine' });
@@ -361,6 +405,7 @@ try {
   assert.equal(latest.operation.turbinePhase, 'parked');
   assert.equal(latest.sample.rotorSpeedRadPerSec, 0);
   assert.equal(latest.sample.generatorTorqueNm, 0);
+  assert.equal(latest.sample.windEstimator.status, 'held');
   const afterStopTime = latest.sample.timeS;
   await request({ type: 'start-turbine' });
   advance();

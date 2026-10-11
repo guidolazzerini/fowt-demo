@@ -100,6 +100,18 @@ export function ControlsPanel({ settings, controllerBandwidthEstimate, onSetting
         <option value="legacy-above-rated">Legacy above-rated · 10–20 m/s</option>
         <option value="coordinated-tsr-pi">Coordinated TSR PI · 3–25 m/s</option>
       </select></label>
+      <label className="select-row"><span>Controller wind input</span><select value={settings.controllerWindSource} disabled={!coordinated}
+        onChange={event => onSettingsChange({ controllerWindSource: event.currentTarget.value === "coflex-estimate" ? "coflex-estimate" : "simulated-free-stream" })}>
+        <option value="simulated-free-stream">Simulated free-stream wind</option>
+        <option value="coflex-estimate">COFLEX estimated rotor-effective wind</option>
+      </select></label>
+      <p className="setting-timing">{coordinated ? "Wind source applies live · existing 5 s filter retained" : "Wind selection is inactive in legacy mode"}</p>
+      <InfoDisclosure label="Which wind drives control?">
+        <p>The selected wind drives the torque speed reference and low-wind pitch floor during generation.
+          Switching preserves wind, filter and PI states. Startup/loading and protection keep their existing simulated signals.</p>
+        <p>The estimator starts from your independent guess. A held or limited estimate remains selected;
+          there is no automatic fallback to simulated wind. Check diagnostics when tuning gains.</p>
+      </InfoDisclosure>
       <label className="checkbox-row"><input type="checkbox" checked={settings.smoothingEnabled} disabled={!coordinated}
         onChange={event => onSettingsChange({ smoothingEnabled: event.currentTarget.checked })} /><span>Enable set-point smoothing</span></label>
       <p className="setting-timing">{coordinated ? "Smoothing changes apply live · gains are retained" : "Smoothing is inactive in legacy mode"}</p>
@@ -144,6 +156,20 @@ export function ControlsPanel({ settings, controllerBandwidthEstimate, onSetting
       <fieldset disabled={!coordinated || !settings.smoothingEnabled}><legend>Smoothing{(!coordinated || !settings.smoothingEnabled) && " · inactive"}</legend>
         {slider("torqueReferenceShiftGain", "Torque-reference gain", "–", !coordinated || !settings.smoothingEnabled)}
         {slider("pitchReferenceShiftGain", "Pitch-reference gain", "–", !coordinated || !settings.smoothingEnabled)}
+      </fieldset>
+      <fieldset><legend>COFLEX wind estimator</legend>
+        {slider("windEstimatorKp", "Estimator Kp", "m/rad")}
+        {slider("windEstimatorKi", "Estimator Ki", "m/(rad s)")}
+        {slider("windEstimatorInitialMps", "Initial wind estimate", "m/s")}
+        <p className="setting-timing">Estimator gains apply live · initial estimate applies on Reset</p>
+        <InfoDisclosure label="About the wind estimate">
+          <p>Rotor speed, applied pitch and generator torque drive the COFLEX torque-balance observer.
+            It estimates rotor-effective wind. Select its use for control in the Control strategy tab.</p>
+          <p>The estimate is held during startup, shutdown and unsupported speed/pitch conditions.
+            Initial wind is your independent guess. These fixed gains are demonstrator suggestions, not paper values.</p>
+          <p>Kp must stay positive. Ki = 0 disables the integral contribution; the speed-observer state adjusts to preserve
+            the current wind estimate when switching. Poor guesses or gains can prevent convergence.</p>
+        </InfoDisclosure>
       </fieldset>
       {(settings.pitchKp > 1.6 || settings.pitchKi > .05 || (settings.pitchKp > 1.5 && settings.pitchKi > .03)) &&
         <p className="setting-warning">High pitch gains can cause aggressive action or oscillation.</p>}
@@ -197,7 +223,7 @@ export function ControlsPanel({ settings, controllerBandwidthEstimate, onSetting
           Shutdown pitch rate is at most 2°/s or your lower limit.</p>
         <p>Off: coordinated Reset solves a generating equilibrium; infeasible limits block Start.
           Legacy initial pitch applies only on Reset.</p>
-        <p>Torque control uses simulated free-stream wind filtered over {fixedTorque.windFilterTimeConstantS} s; target TSR is {fixedTorque.targetTsr}.
+        <p>Torque control uses the selected wind signal filtered over {fixedTorque.windFilterTimeConstantS} s; target TSR is {fixedTorque.targetTsr}.
           Aerodynamics use rotor-effective wind including platform motion.</p>
         <p>With startup/shutdown on, short excursions outside the aero table use a flagged approximation, limited to 30 m/s
           free-stream and rotor-effective wind and the table maximum speed. Off, leaving the table pauses the model.</p>

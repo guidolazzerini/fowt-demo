@@ -113,7 +113,7 @@ export async function runSetpointSmootherChecks(): Promise<void> {
     pitchRad: 0.1, torqueNm: config.torque.maxTorqueNm });
   for (let i = 0; i < 1500; i++) {
     const cfg = { ...config, smoother: { ...config.smoother, enabled: i < 500 || i >= 1000 } };
-    const step = stepCoordinatedController(state, { simulatedFreeStreamWindMps: 12,
+    const step = stepCoordinatedController(state, { controlWindMps: 12,
       rotorSpeedRadPerSec: i < 500 ? 1 : i < 1000 ? 0.4 : params.ratedRotorSpeedRadPerSec,
       platformPitchRateRadPerSec: 0.002 }, cfg, 0.02);
     const pd = step.diagnostics.pitch, td = step.diagnostics.torque;
@@ -126,13 +126,13 @@ export async function runSetpointSmootherChecks(): Promise<void> {
   // A rapidly rising scheduled minimum must not bypass the pitch slew limiter.
   const fastWindConfig = { ...config, torque: { ...config.torque, windFilterTimeConstantS: 0 } };
   const lowPitch = createCoordinatedControllerState(fastWindConfig, { windMps: 8, rotorSpeedRadPerSec: 5 * RPM, pitchRad: 0, torqueNm: 0 });
-  const fallingWind = stepCoordinatedController(lowPitch, { simulatedFreeStreamWindMps: 3,
+  const fallingWind = stepCoordinatedController(lowPitch, { controlWindMps: 3,
     rotorSpeedRadPerSec: 5 * RPM, platformPitchRateRadPerSec: 0 }, fastWindConfig, 0.02);
   close(fallingWind.control.collectivePitchRad, config.pitch.maxPitchRateRadPerSec * 0.02);
   assert(fallingWind.diagnostics.minimumPitchRad < fallingWind.diagnostics.scheduledMinimumPitchRad,
     "moving pitch floor is limited to reachable actuator position");
   const zeroKi = { ...config, torque: { ...config.torque, kiNmPerRad: 0 }, pitch: { ...config.pitch, pitchKi: 0 } };
-  const cleared = stepCoordinatedController(state, { simulatedFreeStreamWindMps: 12,
+  const cleared = stepCoordinatedController(state, { controlWindMps: 12,
     rotorSpeedRadPerSec: params.ratedRotorSpeedRadPerSec, platformPitchRateRadPerSec: 0 }, zeroKi, 0.02);
   close(cleared.state.pitch.integralErrorRad, 0);
   close(cleared.state.torque.integralTorqueNm, 0);

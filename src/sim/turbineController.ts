@@ -8,6 +8,7 @@ import {
   type PitchControllerState,
 } from "./controller";
 import type { ControlInputs } from "./inputs";
+import type { ControllerWindSource } from "./windEstimator";
 import { stepCoordinatedController, type CoordinatedControllerConfig, type CoordinatedControllerState } from "./coordinatedController";
 import { belowRatedPitchDemand, stepBelowRatedPitch, type BelowRatedPitchConfig } from "./belowRatedPitch";
 import {
@@ -45,7 +46,8 @@ export interface BelowRatedTurbineControllerState {
 export type TurbineControllerConfig = LegacyTurbineControllerConfig | BelowRatedTurbineControllerConfig | CoordinatedControllerConfig;
 export type TurbineControllerState = LegacyTurbineControllerState | BelowRatedTurbineControllerState | CoordinatedControllerState;
 export interface TurbineControllerMeasurements extends PitchControllerMeasurements {
-  simulatedFreeStreamWindMps?: number;
+  controlWindMps?: number;
+  windInputSource?: ControllerWindSource;
 }
 
 // Retain the existing pitch diagnostics so current consumers remain compatible.
@@ -144,20 +146,20 @@ export function stepTurbineController(
   dtS: number,
 ): TurbineControllerStepResult {
   if (config.strategy === "coordinated-tsr-pi" && state.strategy === "coordinated-tsr-pi") {
-    if (measurements.simulatedFreeStreamWindMps === undefined) throw new Error("Coordinated control requires simulated free-stream wind.");
-    return stepCoordinatedController(state, { ...measurements, simulatedFreeStreamWindMps: measurements.simulatedFreeStreamWindMps }, config, dtS);
+    if (measurements.controlWindMps === undefined) throw new Error("Coordinated control requires a selected wind signal.");
+    return stepCoordinatedController(state, { ...measurements, controlWindMps: measurements.controlWindMps }, config, dtS);
   }
   if (config.strategy === "below-rated-tsr-pi" && state.strategy === "below-rated-tsr-pi") {
-    if (measurements.simulatedFreeStreamWindMps === undefined) {
-      throw new Error("Below-rated control requires simulated free-stream wind.");
+    if (measurements.controlWindMps === undefined) {
+      throw new Error("Below-rated control requires a selected wind signal.");
     }
     const result = stepTorqueController(state.torque, {
       rotorSpeedRadPerSec: measurements.rotorSpeedRadPerSec,
-      simulatedFreeStreamWindMps: measurements.simulatedFreeStreamWindMps,
+      controlWindMps: measurements.controlWindMps,
+      windInputSource: measurements.windInputSource,
     }, config.torque, dtS);
-    // Share the torque loop's 5 s filtered simulated free-stream wind. This is
-    // a scheduled pitch command in this isolated mode, not an estimated wind
-    // signal or an above-rated speed-regulating pitch PI.
+    // Share the torque loop's filtered selected wind for scheduled pitch.
+    // This isolated development mode has no above-rated pitch PI.
     const pitch = stepBelowRatedPitch(state.previousPitchRad, result.state.filteredWindMps, config.pitch, dtS);
     return {
       state: { strategy: config.strategy, torque: result.state, previousPitchRad: pitch.pitchRad },

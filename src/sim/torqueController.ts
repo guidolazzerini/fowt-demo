@@ -1,3 +1,5 @@
+import type { ControllerWindSource } from "./windEstimator";
+
 /** All torques are rotor-side [N m]. Positive generator torque brakes the rotor. */
 export interface TorqueControllerConfig {
   targetTsr: number;
@@ -19,7 +21,8 @@ export interface TorqueControllerState {
 }
 
 export interface TorqueControllerDiagnostics {
-  simulatedFreeStreamWindMps: number;
+  controlWindMps: number;
+  windInputSource: ControllerWindSource;
   filteredWindMps: number;
   speedRefRadPerSec: number;
   minimumSpeedActive: boolean;
@@ -70,22 +73,23 @@ export function createTorqueControllerState(
 
 export function stepTorqueController(
   state: TorqueControllerState,
-  measurements: { rotorSpeedRadPerSec: number; simulatedFreeStreamWindMps: number },
+  measurements: { rotorSpeedRadPerSec: number; controlWindMps: number; windInputSource?: ControllerWindSource },
   config: TorqueControllerConfig,
   dtS: number,
   speedReferenceShiftRadPerSec = 0,
 ): { state: TorqueControllerState; torqueNm: number; diagnostics: TorqueControllerDiagnostics } {
   validateConfig(config);
-  validateMeasurements(measurements.simulatedFreeStreamWindMps, measurements.rotorSpeedRadPerSec);
+  validateMeasurements(measurements.controlWindMps, measurements.rotorSpeedRadPerSec);
   if (!Number.isFinite(dtS) || dtS <= 0) throw new Error("Torque controller dt must be positive [s].");
   if (!Object.values(state).every(Number.isFinite) || state.filteredWindMps < 0) {
     throw new Error("Invalid torque controller state.");
   }
-  // Exact discrete first-order low pass of the simulated FREE-STREAM wind.
-  // This is an available simulator signal, not an estimated or rotor-effective wind.
+  // Exact discrete first-order low pass of the selected signal [m/s]: either
+  // simulated free-stream wind or estimated rotor-effective wind. Keep this
+  // filter's state on source changes, rather than resetting either control PI.
   if (!Number.isFinite(speedReferenceShiftRadPerSec)) throw new Error("Torque reference shift must be finite [rad/s].");
   const filteredWindMps = filteredTorqueWind(state.filteredWindMps,
-    measurements.simulatedFreeStreamWindMps, config.windFilterTimeConstantS, dtS);
+    measurements.controlWindMps, config.windFilterTimeConstantS, dtS);
   const unconstrainedRef = config.targetTsr * filteredWindMps / config.rotorRadiusM;
   const speedRefRadPerSec = torqueSpeedReference(filteredWindMps, config) + speedReferenceShiftRadPerSec;
   // Overspeed => positive error => increased braking torque (opposite sign to
@@ -116,7 +120,8 @@ export function stepTorqueController(
     state: { filteredWindMps, integralTorqueNm, previousTorqueNm: accepted.torque },
     torqueNm: accepted.torque,
     diagnostics: {
-      simulatedFreeStreamWindMps: measurements.simulatedFreeStreamWindMps,
+      controlWindMps: measurements.controlWindMps,
+      windInputSource: measurements.windInputSource ?? "simulated-free-stream",
       filteredWindMps, speedRefRadPerSec,
       minimumSpeedActive: unconstrainedRef < config.minimumRotorSpeedRadPerSec,
       ratedSpeedActive: unconstrainedRef > config.ratedRotorSpeedRadPerSec,

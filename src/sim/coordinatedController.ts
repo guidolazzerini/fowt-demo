@@ -1,4 +1,5 @@
 import { belowRatedPitchDemand, type BelowRatedPitchConfig } from "./belowRatedPitch";
+import type { ControllerWindSource } from "./windEstimator";
 import { createPitchControllerState, retunePitchControllerState, stepPitchController,
   type PitchControllerConfig, type PitchControllerMeasurements, type PitchControllerState } from "./controller";
 import { smoothSetpoints, type SetpointSmootherConfig } from "./setpointSmoother";
@@ -78,10 +79,10 @@ export function createCoordinatedControllerState(config: CoordinatedControllerCo
 }
 
 export function stepCoordinatedController(state: CoordinatedControllerState,
-  measurements: PitchControllerMeasurements & { simulatedFreeStreamWindMps: number },
+  measurements: PitchControllerMeasurements & { controlWindMps: number; windInputSource?: ControllerWindSource },
   config: CoordinatedControllerConfig, dtS: number) {
   validateConfig(config);
-  const wind = filteredTorqueWind(state.torque.filteredWindMps, measurements.simulatedFreeStreamWindMps,
+  const wind = filteredTorqueWind(state.torque.filteredWindMps, measurements.controlWindMps,
     config.torque.windFilterTimeConstantS, dtS);
   const scheduledMinimumPitchRad = belowRatedPitchDemand(wind, config.minimumPitch).targetPitchRad;
   // A rising scheduled floor must respect actuator slew too. Feed this reachable

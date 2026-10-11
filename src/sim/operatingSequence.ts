@@ -1,4 +1,5 @@
 import { computeAerodynamicOutputs, type AeroPerformanceTable } from "./aero";
+import type { ControllerWindSource } from "./windEstimator";
 import { belowRatedPitchDemand } from "./belowRatedPitch";
 import { createCoordinatedControllerState, retuneCoordinatedControllerState, type CoordinatedControllerConfig, type CoordinatedControllerState } from "./coordinatedController";
 import type { ControlInputs, EnvironmentInputs } from "./inputs";
@@ -86,6 +87,8 @@ export function stepOperatingSequence(input: {
   supervisor: OperatingSupervisor; sequence: OperatingSequence; state: TurbineState; control: ControlInputs;
   controllerState: CoordinatedControllerState; config: CoordinatedControllerConfig;
   environment: EnvironmentInputs; params: TunableParameters; table: AeroPerformanceTable; dtS: number;
+  generatingWindMps?: number; // Selected input affects generating control only.
+  windInputSource?: ControllerWindSource;
 }) {
   const { state, config, environment, params, table, dtS } = input;
   if (!(dtS > 0) || !Number.isFinite(dtS) || !Object.values(state).every(Number.isFinite) ||
@@ -186,8 +189,12 @@ export function stepOperatingSequence(input: {
       sequence = { ...sequence, phase: "generating", elapsedS: 0, reason: "Generating" };
     }
   } else if (sequence.phase === "generating") {
+    if (input.windInputSource === "coflex-estimate" && input.generatingWindMps === undefined) {
+      throw new Error("Estimated-wind generating control requires an estimate; no simulated-wind fallback.");
+    }
     const result = stepTurbineController(controllerState, { rotorSpeedRadPerSec: state.rotorSpeedRadPerSec,
-      platformPitchRateRadPerSec: state.platformPitchRateRadPerSec, simulatedFreeStreamWindMps: wind }, config, dtS);
+      platformPitchRateRadPerSec: state.platformPitchRateRadPerSec,
+      controlWindMps: input.generatingWindMps ?? wind, windInputSource: input.windInputSource }, config, dtS);
     if (result.state.strategy !== "coordinated-tsr-pi") throw new Error("Sequence requires coordinated control.");
     controllerState = result.state;
     control = result.control;

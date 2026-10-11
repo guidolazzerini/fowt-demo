@@ -62,9 +62,38 @@ control are future stages.
 
 The base torque speed reference is
 `clamp(9.5 * filtered_wind / 120, 5 rpm, 7.55 rpm)`, evaluated in rad/s internally.
-The wind signal is **simulated free-stream wind**, filtered with a first-order
-5 s time constant. It is not an estimated wind signal. Aerodynamics instead use
-rotor-effective wind, accounting for platform inclination and motion.
+The default wind signal is **simulated free-stream wind**. In **Control strategy**,
+you can instead select **COFLEX estimated rotor-effective wind** for coordinated
+generating control. Both use the same first-order 5 s filter for the torque
+reference and low-wind pitch floor. Aerodynamics use actual rotor-effective wind,
+accounting for platform inclination and motion.
+
+### COFLEX wind estimate and selectable control input
+
+**Controller diagnostics** now compares a COFLEX estimate with actual rotor-effective
+wind and simulated free-stream wind. The observer uses rotor speed, applied pitch
+and rotor-side generator torque, with the existing 3D Cp table. It does not receive
+the simulated wind or aerodynamic torque. Selecting it for control applies live,
+preserving the wind realization, controller/filter states and all gains. Legacy
+pitch control is unaffected. Startup/loading and protection retain their existing
+simulated signals. Held/limited estimates remain selected, with no automatic
+fallback to simulated wind; invalid/unavailable selected input stops with an error.
+
+Generating Reset still uses the simulated equilibrium for the physical state and
+controller preload, including the wind filter. Startup handover retains its
+existing filtered wind. Afterward the filter follows the selected input; the
+estimator itself always starts from its independent guess.
+
+In **Gains**, estimator Kp/Ki apply live; **Initial wind estimate** applies on Reset.
+Estimator Ki may be zero; Kp must remain positive (UI minimum 0.01 m/rad).
+Ki = 0 removes the integral contribution. Switching to it adjusts the internal
+speed estimate to preserve the current wind output, without keeping a hidden bias.
+Defaults are fixed demonstrator suggestions: Kp = 100 m/rad, Ki = 5 m/(rad s),
+initial guess = 8 m/s. There is no automatic gain scheduling. The estimate is held
+during startup/shutdown and outside the table's speed/pitch range. Poor initial
+guesses or gains can fail to converge; `tracking` is not an accuracy guarantee.
+See [equations and limitations](docs/coflex-wind-estimator.md) and
+[closed-loop results and browser checks](docs/estimated-wind-control.md).
 
 The low-wind pitch floor uses the published IEA 15 MW schedule's low-wind branch;
 near-rated thrust peak shaving is not included. It permits positive generating
@@ -186,7 +215,7 @@ points and their tracking/motion trade-offs are documented in
 | Initial collective pitch | Legacy: next Reset only; inactive in coordinated mode |
 | Tabs, information disclosures, diagnostics visibility | View only; preserve simulation and wind state |
 
-For positive Ki, gain changes adjust integral state to preserve the current
+For torque/pitch controllers with positive Ki, gain changes adjust integral state to preserve the current
 command as far as practical. Ki = 0 explicitly clears the corresponding integral;
 actuator rate limits constrain the resulting adjustment. Floating-feedback gain
 has units of seconds; the platform-rate filter is fixed at 0.2 Hz.
@@ -241,6 +270,7 @@ npm run preview
 | `check:browser-range` | Actual worker message handling, generating boundaries, initialization, 1600 s crossings, 1200 s turbulent smoothing comparisons, live edits and strategy changes |
 | `check:controls` | React static markup, tab/input contracts, diagnostic conversions and compact SVG paths |
 | `check:startup-shutdown` | Six startup/generating/shutdown cycles, actuator slew, parking brake, boundary aborts, power signs and timestep sensitivity |
+| `check:wind-estimator` | COFLEX equations and comparison isolation; estimated-wind control at 3–25 m/s, transitions, turbulence, startup and timestep checks |
 
 Worker tests use a deterministic manual clock. Static React tests verify markup;
 they do **not** test browser clicks, rendering performance or Chrome memory.
@@ -275,6 +305,7 @@ not yet been confirmed. See [Step 9's review checklist](docs/step9-validation.md
 | `src/sim/controller.ts`, `torqueController.ts`, `coordinatedController.ts`, `setpointSmoother.ts` | Pitch PI, torque PI and coordinated references |
 | `src/sim/belowRatedPitch.ts`, `suggestedGains.ts` | Low-wind pitch schedule and manually applied gain catalog |
 | `src/sim/model.ts`, `aero.ts`, `wind.ts` | Rotor/platform physics, aerodynamic interpolation and disturbances |
+| `src/sim/windEstimator.ts` | Shared COFLEX observer and explicit control-input selection |
 | `src/sim/simulation.ts`, `src/dev/`, `scripts/` | Offline scenarios and repeatable checks |
 | `src/sim/settingRanges.ts` | Numeric ranges shared by controls and worker validation |
 | `public/iea15mw-aero-v1.json` | Aerodynamic lookup data, copied into the build |

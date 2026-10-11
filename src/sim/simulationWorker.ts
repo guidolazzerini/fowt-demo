@@ -1,3 +1,4 @@
+import { createWindEstimatorConfig, createWindEstimatorState, retuneWindEstimator, stepWindEstimator, selectControllerWind, type WindEstimatorState, type WindEstimatorDiagnostics } from "./windEstimator";
 import { OperatingSupervisor } from "./operatingSupervisor";
 /// <reference lib="webworker" />
 
@@ -65,6 +66,8 @@ let control: ControlInputs | undefined;
 let controllerDiagnostics: TurbineControllerDiagnostics | undefined;
 let operatingSequence: OperatingSequence | undefined;
 let operatingSupervisor = new OperatingSupervisor();
+let windEstimatorState: WindEstimatorState | undefined;
+let windEstimatorDiagnostics: WindEstimatorDiagnostics | undefined;
 let boundaryTripped = false;
 let unsupportedReason: string | undefined;
 let limitsNeedReset = false;
@@ -232,6 +235,8 @@ function resetSimulationState(): void {
 }
 
 function finishReset(): void {
+  windEstimatorState = createWindEstimatorState(state!.rotorSpeedRadPerSec, estimatorConfig(), aeroTable!);
+  windEstimatorDiagnostics = undefined;
   boundaryTripped = false;
   unsupportedReason = undefined;
   limitsNeedReset = false;
@@ -257,6 +262,10 @@ function updateSettings(partialSettings: Partial<SimulationUiSettings>): void {
     controllerConfig = buildControllerConfig(params, { ...settings, strategy: controllerConfig.strategy });
   }
   invalidateBandwidthEstimate();
+  if (windEstimatorState && (settings.windEstimatorKp !== previousSettings.windEstimatorKp ||
+    settings.windEstimatorKi !== previousSettings.windEstimatorKi)) {
+    windEstimatorState = retuneWindEstimator(windEstimatorState, estimatorConfig());
+  }
 
   if (
     state !== undefined && controllerState !== undefined &&
@@ -362,13 +371,17 @@ function stepOnce(): void {
 
   if (operatingSequence && controllerConfig.strategy === "coordinated-tsr-pi" && controllerState.strategy === "coordinated-tsr-pi" && control) {
     windSample = stepWindDisturbance(wind, settings.dtS);
+    const wasGenerating = operatingSequence.phase === "generating";
     const next = stepOperatingSequence({ supervisor: operatingSupervisor, sequence: operatingSequence, state, control, controllerState,
-      config: controllerConfig, environment: windSample.environment, params, table: aeroTable, dtS: settings.dtS });
+      config: controllerConfig, environment: windSample.environment, params, table: aeroTable, dtS: settings.dtS,
+      generatingWindMps: selectControllerWind(settings.controllerWindSource, windSample.windSpeedMps, windEstimatorState),
+      windInputSource: settings.controllerWindSource });
     operatingSequence = next.sequence;
     state = next.state;
     control = next.control;
     controllerState = next.controllerState;
     controllerDiagnostics = next.diagnostics;
+    advanceWindEstimator(wasGenerating && operatingSequence.phase === "generating");
     lastSupportedSample = createSample();
     return;
   }
@@ -378,7 +391,8 @@ function stepOnce(): void {
     {
       rotorSpeedRadPerSec: state.rotorSpeedRadPerSec,
       platformPitchRateRadPerSec: state.platformPitchRateRadPerSec,
-      simulatedFreeStreamWindMps: windSample!.windSpeedMps,
+      controlWindMps: selectControllerWind(settings.controllerWindSource, windSample!.windSpeedMps, windEstimatorState),
+      windInputSource: settings.controllerWindSource,
     },
     controllerConfig,
     settings.dtS,
@@ -417,6 +431,23 @@ function stepOnce(): void {
     return;
   }
   state = snapshot.state;
+  advanceWindEstimator(true);
+}
+
+function estimatorConfig() {
+  return createWindEstimatorConfig(params, { kpMPerRad: settings.windEstimatorKp,
+    kiMPerRadSec: settings.windEstimatorKi, initialWindMps: settings.windEstimatorInitialMps });
+}
+
+function advanceWindEstimator(generating: boolean): void {
+  if (!state || !control || !aeroTable || !windEstimatorState) return;
+  // Only rotor speed, applied pitch/torque and operating phase enter the observer.
+  // Truth wind remains separate, for comparison plots and optional reference control.
+  const result = stepWindEstimator(windEstimatorState, { rotorSpeedRadPerSec: state.rotorSpeedRadPerSec,
+    pitchRad: control.collectivePitchRad, generatorTorqueNm: control.generatorTorqueNm, generating },
+    estimatorConfig(), aeroTable, settings.dtS);
+  windEstimatorState = result.state;
+  windEstimatorDiagnostics = result.diagnostics;
 }
 
 function createSample(): SimulationScenarioSample {
@@ -472,6 +503,7 @@ function createSample(): SimulationScenarioSample {
     ct: aero.ct,
     wavePitchMomentNm: windSample.environment.wavePitchMomentNm,
     controllerDiagnostics,
+    ...(windEstimatorDiagnostics ? { windEstimator: windEstimatorDiagnostics } : {}),
     ...(operatingSequence ? { operatingSequence } : {}),
   };
 }
@@ -866,6 +898,7 @@ function sanitiseSettings(nextSettings: SimulationUiSettings): SimulationUiSetti
   const maxPitchDeg = Math.max(minPitchDeg, bounded.maxPitchDeg);
   return { ...bounded,
     strategy: nextSettings.strategy === "coordinated-tsr-pi" ? nextSettings.strategy : "legacy-above-rated",
+    controllerWindSource: nextSettings.controllerWindSource === "coflex-estimate" ? "coflex-estimate" : "simulated-free-stream",
     smoothingEnabled: Boolean(nextSettings.smoothingEnabled),
     startupShutdownEnabled: nextSettings.strategy === "coordinated-tsr-pi" && Boolean(nextSettings.startupShutdownEnabled),
     stepsPerWorkerTick: Math.round(bounded.stepsPerWorkerTick),

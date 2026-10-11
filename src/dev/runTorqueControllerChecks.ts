@@ -34,13 +34,13 @@ export async function runTorqueControllerChecks(): Promise<void> {
   }
   const pitchState = createTurbineControllerState(config, { initialWindMps: 3, initialRotorSpeedRadPerSec: 5 * RPM, initialTorqueNm: 0 });
   const pitchStep = stepTurbineController(pitchState, { rotorSpeedRadPerSec: 5 * RPM,
-    platformPitchRateRadPerSec: 0, simulatedFreeStreamWindMps: 8 }, config, 1);
+    platformPitchRateRadPerSec: 0, controlWindMps: 8 }, config, 1);
   assert(pitchStep.diagnostics.strategy === "below-rated-tsr-pi" &&
     pitchStep.diagnostics.pitch.scheduledPitchRad === iea15LowWindPitchRad(pitchStep.diagnostics.torque.filteredWindMps),
     "pitch uses the same filtered simulated wind as torque");
   const ref = torqueSpeedReference(6, torque);
   const initial = createTorqueControllerState(torque, 6, ref, 5e6);
-  const measure = (speed: number, wind = 6) => ({ rotorSpeedRadPerSec: speed, simulatedFreeStreamWindMps: wind });
+  const measure = (speed: number, wind = 6) => ({ rotorSpeedRadPerSec: speed, controlWindMps: wind });
   const up = stepTorqueController(initial, measure(ref + 0.02), torque, dt);
   const down = stepTorqueController(initial, measure(ref - 0.02), torque, dt);
   assert(up.torqueNm > initial.previousTorqueNm && down.torqueNm < initial.previousTorqueNm,
@@ -48,7 +48,7 @@ export async function runTorqueControllerChecks(): Promise<void> {
   assert(up.diagnostics.wasRateLimited && down.diagnostics.wasRateLimited, "both slew directions exercised");
   const filtered = stepTorqueController(initial, measure(ref, 8), torque, 1);
   assert(Math.abs(filtered.state.filteredWindMps - (8 - 2 * Math.exp(-1 / 5))) < 1e-12, "5 s filter response");
-  assert(filtered.diagnostics.simulatedFreeStreamWindMps === 8, "signal identified as simulated free-stream wind");
+  assert(filtered.diagnostics.controlWindMps === 8 && filtered.diagnostics.windInputSource === "simulated-free-stream", "raw input and source identified");
 
   // Sustained infeasible errors must not accumulate integral state at either cap.
   for (const speed of [0, 2]) {

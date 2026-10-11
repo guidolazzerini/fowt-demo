@@ -39,9 +39,16 @@ export function DiagnosticContent({ history, operation, settings }: DiagnosticPr
   const values = (key: NumericSignal) => rows.map(row => ({ timeS: row.timeS, value: row.signals[key] }));
   const constant = (value: number) => rows.map(row => ({ timeS: row.timeS, value }));
   const plots: PlotSeries[] = [
+    { title: "Wind estimate and control input", unit: "m/s", label: "COFLEX rotor-effective estimate",
+      values: history.map(sample => ({ timeS: sample.timeS,
+        value: sample.windEstimator && sample.windEstimator.status !== "held" ? sample.windEstimator.estimatedWindMps : NaN })),
+      overlays: [{ label: "Actual rotor-effective wind", values: history.map(sample => ({ timeS: sample.timeS, value: sample.effectiveWindSpeedMps })) },
+        { label: "Simulated free-stream wind", values: history.map(sample => ({ timeS: sample.timeS, value: sample.windSpeedMps })) },
+        { label: "Filtered controller wind", values: history.map(sample => ({ timeS: sample.timeS,
+          value: sample.controllerDiagnostics?.strategy === "coordinated-tsr-pi" ? sample.controllerDiagnostics.torque.filteredWindMps : NaN })) }] },
     { title: "Speed and controller references", unit: "rpm", label: "Rotor", values: values("rotorRpm"),
       overlays: [{ label: "Torque reference", values: values("torqueRefRpm") }, { label: "Pitch reference", values: values("pitchRefRpm") }] },
-    { title: "Tip-speed ratio", unit: "–", label: "Using filtered free-stream wind", values: values("controlTsr"),
+    { title: "Tip-speed ratio", unit: "–", label: "Using filtered controller wind", values: values("controlTsr"),
       overlays: [{ label: "TSR target", values: values("targetTsr") }, { label: "Using rotor-effective wind", values: values("aerodynamicTsr") }] },
     { title: "Generator torque", unit: "MN m", label: "Applied (rotor side)", values: values("torqueMNm"),
       overlays: [{ label: "Normal operating cap", values: constant(Math.min(parameters.ratedGeneratorTorqueNm, parameters.maxGeneratorTorqueNm) / 1e6) },
@@ -68,6 +75,8 @@ export function DiagnosticContent({ history, operation, settings }: DiagnosticPr
       <div><dt>Active strategy</dt><dd>{strategyName(operation?.activeStrategy)}</dd></div>
       <div><dt>Selected strategy</dt><dd>{strategyName(settings.strategy)}</dd></div>
       <div><dt>Operating region</dt><dd>{operation?.region ?? "—"}</dd></div>
+      <div><dt>Latest controller wind input</dt><dd>{lastSample.controllerDiagnostics?.strategy === "coordinated-tsr-pi" ?
+        (lastSample.controllerDiagnostics.torque.windInputSource === "coflex-estimate" ? "COFLEX estimated rotor-effective wind" : "Simulated free-stream wind") : "Inactive / awaiting generating control"}</dd></div>
     </dl>
     <p className="setting-timing">Latest applied control step · displayed at {lastSample.timeS.toFixed(2)} s
       {operation?.requiresReset ? " · frozen / Reset required" : ""}
@@ -83,14 +92,21 @@ export function DiagnosticContent({ history, operation, settings }: DiagnosticPr
       <div><dt>Storm wind · 100 s exponential filter</dt><dd>{lastSample.operatingSequence.supervisor.stormWindMps.toFixed(2)} m/s
         · {lastSample.operatingSequence.supervisor.stormBlocked ? "Restart blocked until ≤23 m/s" : "Clear"}</dd></div>
     </dl>}
+    <p className="setting-timing">COFLEX estimator: {lastSample.windEstimator ?
+      `${lastSample.windEstimator.status} · ${lastSample.windEstimator.estimatedWindMps.toFixed(2)} m/s · ${lastSample.windEstimator.reason}` :
+      "awaiting a simulation step"}.</p>
     <dl className="diagnostic-indicators">
       {indicators.map(([label, active]) => <div key={label} className={active ? "limit-active" : ""}>
         <dt>{label}</dt><dd>{active === undefined ? "N/A" : active ? "Active" : "Inactive"}</dd>
       </div>)}
     </dl>
     <InfoDisclosure label="How to read these diagnostics">
-      <p>Control TSR uses simulated free-stream wind filtered over 5 s; aerodynamic TSR uses rotor-effective wind.
+      <p>The COFLEX estimate is rotor-effective wind from a 3D Cp torque-balance model (Lazzerini et al., 2025, Eq. 10).
+        Held estimates leave gaps in the plot. Tracking means the observer is running, not that accuracy is guaranteed.</p>
+      <p>Control TSR uses the selected wind filtered over 5 s; aerodynamic TSR uses actual rotor-effective wind.
         Speed limits can prevent target TSR tracking.</p>
+      <p>Estimated-wind control uses the previous completed step's estimate. Held or limited estimates remain selected;
+        startup and protection retain their existing signals. Reset starts the controller filter at the simulated equilibrium wind.</p>
       <p>Pitch demand = bias + proportional + integral + floating feedback. Applied pitch also obeys the floor, limits and rate limit.</p>
       <p>Positive smoothing offset lowers the torque reference; negative offset raises the pitch reference.
         Disabled smoothing applies zero offset; the raw offset remains visible.</p>

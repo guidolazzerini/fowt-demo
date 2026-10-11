@@ -26,7 +26,7 @@ export function diagnosticSignals(sample: SimulationScenarioSample) {
     rotorRpm: sample.rotorSpeedRadPerSec * RPM,
     torqueRefRpm: torque ? torque.speedRefRadPerSec * RPM : unavailable,
     pitchRefRpm: pitchRef === undefined ? unavailable : pitchRef * RPM,
-    // Compare TSR to its control target using the SAME filtered free-stream
+    // Compare TSR to its control target using the SAME filtered selected wind
     // signal as the torque loop. Aerodynamic TSR uses rotor-effective wind.
     controlTsr: ratio(torque?.filteredWindMps),
     aerodynamicTsr: ratio(sample.effectiveWindSpeedMps),

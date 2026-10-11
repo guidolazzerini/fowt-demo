@@ -173,6 +173,7 @@ try {
   // wind, initial conditions, and pitch integral preload are identical.
   const { loadAeroTable } = await server.ssrLoadModule('/src/sim/aero.ts');
   const { createClosedLoopScenario, runSimulationScenario } = await server.ssrLoadModule('/src/sim/simulation.ts');
+  const { createWindEstimatorConfig } = await server.ssrLoadModule('/src/sim/windEstimator.ts');
   const aeroTable = await loadAeroTable(DEFAULT_TUNABLE_PARAMETERS.aero.filePath);
   for (const mode of ['constant', 'gust', 'random']) {
     const initialPitchDeg = mode === 'constant' ? defaults.initialCollectivePitchDeg : 8;
@@ -197,6 +198,7 @@ try {
     scenario.controller.initialControllerState = retunePitchControllerState(
       createPitchControllerState(pitch, scenario.controller.initialPitchRad), base.rotorSpeedRefRadPerSec, pitch,
     );
+    scenario.windEstimator = createWindEstimatorConfig(DEFAULT_TUNABLE_PARAMETERS);
     const offline = runSimulationScenario({ scenario, params: DEFAULT_TUNABLE_PARAMETERS, aeroTable });
     assert.deepEqual(latest.sample, offline.samples[0]);
     await request({ type: 'start' }, 'status');

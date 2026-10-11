@@ -1,3 +1,4 @@
+import { DEFAULT_WIND_ESTIMATOR_TUNING, type ControllerWindSource } from "./windEstimator";
 import type { SimulationScenarioSample } from "./simulation";
 import type { BrowserOperation, BrowserStrategy } from "./generatingEnvelope";
 import { SETTING_RANGES } from "./settingRanges";
@@ -12,6 +13,11 @@ export const TORQUE_KI_MAX = SETTING_RANGES.torqueKiNmPerRad.max;
 
 export interface SimulationUiSettings {
   strategy: BrowserStrategy;
+  controllerWindSource: ControllerWindSource;
+  windEstimatorKp: number; // m/rad
+  windEstimatorKi: number; // m/(rad s)
+  windEstimatorInitialMps: number; // Independent guess, applied on Reset.
+
   startupShutdownEnabled: boolean;
   smoothingEnabled: boolean;
   torqueKpNmsPerRad: number;
@@ -51,6 +57,10 @@ export interface ControllerBandwidthEstimate {
 
 export const DEFAULT_SIMULATION_UI_SETTINGS: SimulationUiSettings = {
   strategy: "legacy-above-rated",
+  controllerWindSource: "simulated-free-stream",
+  windEstimatorKp: DEFAULT_WIND_ESTIMATOR_TUNING.kpMPerRad,
+  windEstimatorKi: DEFAULT_WIND_ESTIMATOR_TUNING.kiMPerRadSec,
+  windEstimatorInitialMps: DEFAULT_WIND_ESTIMATOR_TUNING.initialWindMps,
   startupShutdownEnabled: false,
   smoothingEnabled: true,
   torqueKpNmsPerRad: 50.4e6,

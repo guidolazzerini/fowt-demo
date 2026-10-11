@@ -31,6 +31,10 @@ try {
       assert.equal(markup.includes('Gust amplitude'), windMode === 'gust');
       assert.equal(markup.includes('Turbulence intensity'), windMode === 'random');
       assert.equal(markup.includes('Apply SUGGESTED gains'), strategy === 'coordinated-tsr-pi');
+      const sourceSelect = markup.match(/<span>Controller wind input<\/span>(<select[^>]*>)/)?.[1];
+      assert(sourceSelect);
+      assert.equal(sourceSelect.includes('disabled'), strategy === 'legacy-above-rated');
+      assert(markup.includes('COFLEX estimated rotor-effective wind'));
       assert(!/<details[^>]*\sopen[=> ]/.test(markup), 'Help starts collapsed');
       const windInput = markup.match(/<input[^>]*type="number"[^>]*aria-label="Mean wind speed \(m\/s\)"[^>]*>/)?.[0];
       assert(windInput);

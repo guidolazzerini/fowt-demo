@@ -10,6 +10,9 @@ export type NumericSetting = {
  * currently selected actuator bounds. These are not generating wind limits.
  */
 export const SETTING_RANGES = {
+  windEstimatorKp: { min: 0.01, max: 1000, step: 0.01 },
+  windEstimatorKi: { min: 0, max: 100, step: 0.01 },
+  windEstimatorInitialMps: { min: 2, max: 27, step: 0.1 },
   dtS: { min: 0.005, max: 0.1, step: 0.005 },
   stepsPerWorkerTick: { min: 1, max: 20, step: 1 },
   meanWindSpeedMps: { min: 0, max: 30, step: 0.1 },

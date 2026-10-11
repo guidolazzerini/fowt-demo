@@ -16,6 +16,7 @@ export async function checkDiagnostics(server) {
   const { createCoordinatedScenario, createCoordinatedControllerConfig } = await server.ssrLoadModule('/src/sim/coordinated.ts');
   const { createClosedLoopScenario, runSimulationScenario } = await server.ssrLoadModule('/src/sim/simulation.ts');
   const { loadAeroTable } = await server.ssrLoadModule('/src/sim/aero.ts');
+  const { createWindEstimatorConfig } = await server.ssrLoadModule('/src/sim/windEstimator.ts');
   const originalFetch = globalThis.fetch;
   let table;
   try {
@@ -29,7 +30,7 @@ export async function checkDiagnostics(server) {
   const near = (actual, expected) => assert(Math.abs(actual - expected) < 1e-9, actual + ' vs ' + expected);
   const cases = [
     { speed: 3, coordinated: true, smoothing: true },
-    { speed: 10.5, coordinated: true, smoothing: true },
+    { speed: 10.5, coordinated: true, smoothing: true, estimated: true },
     { speed: 18, coordinated: true, smoothing: false },
     { speed: 14, coordinated: false, smoothing: false },
   ];
@@ -40,6 +41,8 @@ export async function checkDiagnostics(server) {
     const config = createCoordinatedControllerConfig(params, table);
     config.smoother.enabled = test.smoothing;
     const scenario = test.coordinated ? createCoordinatedScenario({ ...args, config }).scenario : createClosedLoopScenario(args);
+    scenario.windEstimator = createWindEstimatorConfig(params);
+    scenario.controllerWindSource = test.estimated ? 'coflex-estimate' : 'simulated-free-stream';
     const result = runSimulationScenario({ scenario, params, aeroTable: table });
     // Match the browser's usual 16 steps/post, retaining Reset's missing diagnostics.
     const history = result.samples.filter((_, index) => index % 16 === 0);
@@ -84,8 +87,11 @@ export async function checkDiagnostics(server) {
     assert(closed.includes('aria-expanded="false"') && closed.includes('hidden=""'));
     assert(!closed.includes('<svg'), 'Closed diagnostics should not render charts');
     const opened = render(DiagnosticContent, props);
+    assert(opened.includes('Filtered controller wind'));
+    if (test.estimated) assert(opened.includes('<dd>COFLEX estimated rotor-effective wind</dd>'), 'Label actual sampled source even if UI settings differ');
     for (const label of ['Torque reference', 'Pitch reference', 'TSR target', 'Applied (rotor side)',
-      'Unlimited demand', 'Floating feedback', 'Raw offset', 'Torque rate limit', 'Test region']) assert(opened.includes(label));
+      'Unlimited demand', 'Floating feedback', 'Raw offset', 'Torque rate limit', 'Test region',
+      'COFLEX rotor-effective estimate', 'Actual rotor-effective wind', 'COFLEX estimator: tracking']) assert(opened.includes(label));
     assert(!opened.includes('NaN') && !opened.includes('Infinity'), 'No invalid SVG/readout values');
     const plot = render(PlotPanel, { history, runState: 'stopped' });
     assert(plot.includes('Generator mechanical') && plot.includes('Aerodynamic'));

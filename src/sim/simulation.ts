@@ -1,3 +1,4 @@
+import { createWindEstimatorState, stepWindEstimator, selectControllerWind, type ControllerWindSource, type WindEstimatorConfig, type WindEstimatorDiagnostics } from "./windEstimator";
 import {
   computeAerodynamicOutputs,
   type AeroPerformanceTable,
@@ -82,6 +83,8 @@ export interface SimulationScenarioConfig {
   wind: WindDisturbanceConfig;
   controller: SimulationControllerMode;
   initialState?: SimulationInitialStateOptions;
+  windEstimator?: WindEstimatorConfig;
+  controllerWindSource?: ControllerWindSource; // Default retains simulated free-stream input.
 }
 
 export interface SimulationScenarioSample {
@@ -116,6 +119,7 @@ export interface SimulationScenarioSample {
 
   controllerDiagnostics?: TurbineControllerDiagnostics;
   operatingSequence?: OperatingSequence;
+  windEstimator?: WindEstimatorDiagnostics;
 }
 
 export interface SimulationScenarioResult {
@@ -260,6 +264,11 @@ export function runSimulationScenario(
   let currentControl = createInitialControl(scenario, params, controllerState);
   let currentControllerDiagnostics: TurbineControllerDiagnostics | undefined;
 
+  let estimatorState = scenario.windEstimator ? createWindEstimatorState(state.rotorSpeedRadPerSec, scenario.windEstimator, aeroTable) : undefined;
+  let estimatorDiagnostics: WindEstimatorDiagnostics | undefined;
+  if (scenario.controllerWindSource === "coflex-estimate" && !estimatorState) {
+    throw new Error("Estimated-wind control requires windEstimator configuration.");
+  }
   const samples: SimulationScenarioSample[] = [];
 
   for (let iStep = 0; iStep <= nSteps; iStep += 1) {
@@ -271,6 +280,7 @@ export function runSimulationScenario(
         params,
         aeroTable,
         controllerDiagnostics: currentControllerDiagnostics,
+        windEstimator: estimatorDiagnostics,
       }),
     );
 
@@ -296,7 +306,8 @@ export function runSimulationScenario(
         {
           rotorSpeedRadPerSec: state.rotorSpeedRadPerSec,
           platformPitchRateRadPerSec: state.platformPitchRateRadPerSec,
-          simulatedFreeStreamWindMps: windSample.windSpeedMps,
+          controlWindMps: selectControllerWind(scenario.controllerWindSource ?? "simulated-free-stream", windSample.windSpeedMps, estimatorState),
+          windInputSource: scenario.controllerWindSource ?? "simulated-free-stream",
         },
         controllerConfig,
         scenario.dtS,
@@ -321,6 +332,13 @@ export function runSimulationScenario(
       { dtS: scenario.dtS },
     );
 
+    if (scenario.windEstimator && estimatorState) {
+      const estimate = stepWindEstimator(estimatorState, { rotorSpeedRadPerSec: snapshot.state.rotorSpeedRadPerSec,
+        pitchRad: currentControl.collectivePitchRad, generatorTorqueNm: currentControl.generatorTorqueNm, generating: true },
+        scenario.windEstimator, aeroTable, scenario.dtS);
+      estimatorState = estimate.state;
+      estimatorDiagnostics = estimate.diagnostics;
+    }
     state = snapshot.state;
   }
 
@@ -410,6 +428,7 @@ function createSimulationSample(args: {
   params: TunableParameters;
   aeroTable: AeroPerformanceTable;
   controllerDiagnostics?: TurbineControllerDiagnostics;
+  windEstimator?: WindEstimatorDiagnostics;
 }): SimulationScenarioSample {
   const { state, control, windSample, params, aeroTable } = args;
 
@@ -463,6 +482,7 @@ function createSimulationSample(args: {
     wavePitchMomentNm: windSample.environment.wavePitchMomentNm,
 
     controllerDiagnostics: args.controllerDiagnostics,
+    ...(args.windEstimator ? { windEstimator: args.windEstimator } : {}),
   };
 }
 

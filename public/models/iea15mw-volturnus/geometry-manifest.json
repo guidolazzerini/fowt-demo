@@ -1,0 +1,129 @@
+{
+  "revision": "e4993d63de10f165389534461dd544006750fe60",
+  "units": "metres",
+  "geometryAxes": "X downwind, Y transverse, Z up",
+  "sourceFiles": {
+    "CAD/OpenSCAD/IEA-15-240-RWT_blade.scad.zip": "e10e048adf4f282509fb750752c9fd147ea688a7924aa6add4c0bfe556be8b35",
+    "CAD/OpenSCAD/IEA-15-240-RWT_blade.stl.zip": "243e9fd7ce789c91f5fb6a6d50d1d36210ca23fd8de9ead8ddf26fb2d84ba176",
+    "CAD/OpenSCAD/IEA-15-240-RWT_VolturnUS-S_tower.scad.zip": "b3e913181304c55de562f113949967943e8c2e78dada2b25ac575eff889c1faa",
+    "CAD/OpenSCAD/IEA-15-240-RWT_VolturnUS-S_tower.stl.zip": "d5df2e5347b3db61a32ea4b2c605a80c201654bf4315e2b266a097f8982edc2a",
+    "CAD/OpenSCAD/IEA-15-240-RWT_VolturnUS-S_floater.scad.zip": "08152ba3b666d12a8ed6787c2ee007c2c944d42a9f76a4b5fc96fc7e35fde389",
+    "CAD/OpenSCAD/IEA-15-240-RWT_VolturnUS-S_floater.stl.zip": "5b3c85b6f91d0a8a4012791a7c20c9c7d624b9e9610b8ce1c823f66e16a3ce99",
+    "WT_Ontology/IEA-15-240-RWT_VolturnUS-S.yaml": "3e77fe033e6f7a638e7cdb83015a329303018a4d53ff7598ce05c3f306581fc1",
+    "OpenFAST/IEA-15-240-RWT-UMaineSemi/IEA-15-240-RWT-UMaineSemi_ElastoDyn.dat": "cccddfd87b8e07cccb2ee83128261c5db46101d65cdf3583b6e0053034783a34",
+    "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  },
+  "inspectedStl": {
+    "IEA-15-240-RWT_blade": {
+      "triangles": 21730,
+      "boundsM": [
+        [
+          -4.07634,
+          -2.62279,
+          0.0
+        ],
+        [
+          2.63713,
+          3.82579,
+          117.001
+        ]
+      ]
+    },
+    "IEA-15-240-RWT_VolturnUS-S_tower": {
+      "triangles": 146,
+      "boundsM": [
+        [
+          -4.96057,
+          -4.99013,
+          0.0
+        ],
+        [
+          5.0,
+          4.99013,
+          144.386
+        ]
+      ]
+    },
+    "IEA-15-240-RWT_VolturnUS-S_floater": {
+      "triangles": 1480,
+      "boundsM": [
+        [
+          -57.9507,
+          -51.0545,
+          -21.2979
+        ],
+        [
+          32.125,
+          51.0326,
+          15.0
+        ]
+      ]
+    }
+  },
+  "bladeLoft": {
+    "sourceSections": 151,
+    "sourcePointsPerSection": 400,
+    "retainedSections": 44,
+    "retainedPointsPerSection": 37,
+    "maxSectionPolylineDeviationM": 0.014853530755463182,
+    "maxSpanInterpolationDeviationM": 0.013348518765425697,
+    "toleranceM": 0.015,
+    "referenceAxisTipM": [
+      -4,
+      0,
+      117
+    ]
+  },
+  "meshes": {
+    "blade": {
+      "vertices": 1692,
+      "triangles": 3232,
+      "boundsM": [
+        [
+          -4.075974131,
+          -2.614014445,
+          0.0
+        ],
+        [
+          2.631026476,
+          3.82502579,
+          117.0
+        ]
+      ]
+    },
+    "tower": {
+      "vertices": 322,
+      "triangles": 384,
+      "boundsM": [
+        [
+          -5.0,
+          -5.0,
+          15.0
+        ],
+        [
+          5.0,
+          5.0,
+          144.386
+        ]
+      ]
+    },
+    "platform": {
+      "vertices": 1302,
+      "triangles": 1252,
+      "boundsM": [
+        [
+          -58.0,
+          -51.066814645844694,
+          -20.0
+        ],
+        [
+          32.12500000000001,
+          51.066814645844694,
+          15.0
+        ]
+      ]
+    }
+  },
+  "glbBytes": 110936,
+  "glbSha256": "ae3b6998741b9dc4a2dafe371997d1a8bc58c2b2e1237798425b1af76aaf6713"
+}

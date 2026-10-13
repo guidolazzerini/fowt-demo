@@ -41,6 +41,19 @@ the simulation clock. This optional model is described [below](#simple-startup-a
 
 ## User review guide
 
+An optional **3D · live motion** sits beside the default live 2D view.
+Optimised reference surfaces show sampled rotor rotation, blade feathering and
+platform pitch. Rotor-speed and blade-pitch gauges reuse the 2D design; wind speed
+sits by the enlarged orange arrow and a signed pitch arc sits by the platform.
+**At a glance** follows the turbine view. Camera presets include the complete
+mooring footprint and an underwater view, with water/seabed visibility controls.
+Three elastic quasi-static lines use the reference anchors and a flat seabed at
+200 m depth. They display shape only and do not add mooring forces to the model.
+Motion blends received samples, never predicting beyond them. **Stop** freezes
+the latest received pose; physical shutdown continues while the clock runs.
+Camera controls and **Reset view** affect only the view. See [geometry provenance,
+timing details and the Stage 4 visual-review checklist](docs/3d-view.md).
+
 Download the [three-page user checks and experiments](docs/fowt-user-checks.pdf):
 startup, wind dips, turbulence, live gains, Chrome memory, smoothing and floating feedback.
 Times are simulated seconds except the 20-minute browser memory check.
@@ -281,6 +294,9 @@ npm run preview
 | `check:suggested-gains` | 74 fixed-gain scenarios, recovery, gusts, turbulence, manual suggestions; optional `-- --sweep` adds comparisons |
 | `check:browser-range` | Actual worker message handling, generating boundaries, initialization, 1600 s crossings, 1200 s turbulent smoothing comparisons, live edits and strategy changes |
 | `check:controls` | React static markup, tab/input contracts, diagnostic conversions and compact SVG paths |
+| `check:geometry` | Reference GLB decode, bounds/normals, mesh budgets, transform signs, shared blades and disposal; no WebGL rendering |
+| `check:motion` | Sample timing/wrap, pause/reset, full feather, transform signs, variable wind arrow and bounded interpolation; no WebGL rendering |
+| `check:catenaries` | Official mooring inputs, pinned MoorPy comparison, slack/contact/suspended profiles, elastic length, endpoints, moving fairleads and reused buffers |
 | `check:startup-shutdown` | Six startup/generating/shutdown cycles, actuator slew, parking brake, boundary aborts, power signs and timestep sensitivity |
 | `check:wind-estimator` | COFLEX equations and comparison isolation; estimated-wind control at 3–25 m/s, transitions, turbulence, startup and timestep checks |
 | `check:gain-scheduling` | 44 scheduled scenarios, 12 identical-wind comparisons, half-timestep crossing, startup/shutdown, integral continuity and actuator limits |

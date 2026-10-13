@@ -1,5 +1,6 @@
 import type { SimulationScenarioSample } from "../sim/simulation";
 import { InfoDisclosure } from "./InfoDisclosure";
+import { pitchColour } from "./pitchColour";
 
 interface FowtSchematicProps {
   sample: SimulationScenarioSample | undefined;
@@ -201,8 +202,7 @@ function RotorSideProjection(props: {
   const bladeRadiusPx = 88;
   const bladeAngles = [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3];
   const collectivePitchDeg = collectivePitchRad * RAD_TO_DEG;
-  const pitchFraction = clamp(collectivePitchDeg / 28, 0, 1);
-  const bladeColour = getCollectivePitchColour(pitchFraction);
+  const bladeColour = pitchColour(collectivePitchDeg);
 
   const projectedBlades = bladeAngles
     .map((offset) => {
@@ -246,7 +246,7 @@ function RotorSideProjection(props: {
   );
 }
 
-function CollectivePitchGauge(props: {
+export function CollectivePitchGauge(props: {
   centre: Point;
   collectivePitchDeg: number;
   accentColour: string;
@@ -283,7 +283,7 @@ function CollectivePitchGauge(props: {
       />
       <circle className="fowt-gauge-centre" cx={centre.x} cy={centre.y} r="4.8" style={{ fill: accentColour }} />
       <text className="fowt-gauge-value" x={centre.x} y={centre.y + 24} textAnchor="middle">
-        {`${formatNumber(clampedPitchDeg, 1)}°`}
+        {`${formatNumber(collectivePitchDeg, 1)}°`}
       </text>
     </g>
   );
@@ -349,13 +349,14 @@ function InSvgReadouts(props: { sample: SimulationScenarioSample | undefined }) 
   );
 }
 
-function RotorSpeedGauge(props: {
+export function RotorSpeedGauge(props: {
   sample: SimulationScenarioSample | undefined;
   centre: Point;
+  minRotorSpeedRpm?: number;
+  showReferenceLabels?: boolean;
 }) {
-  const { sample, centre } = props;
+  const { sample, centre, minRotorSpeedRpm = 5.0, showReferenceLabels = false } = props;
   const ratedRotorSpeedRpm = 7.55;
-  const minRotorSpeedRpm = 5.0;
   const maxRotorSpeedRpm = 10.0;
   const currentRotorSpeedRpm = sample === undefined
     ? ratedRotorSpeedRpm
@@ -373,6 +374,9 @@ function RotorSpeedGauge(props: {
   const filledArcPath = createArcPath(centre, gaugeRadiusPx, startAngleDeg, needleAngleDeg);
   const needleTip = pointOnCircle(centre, needleLengthPx, needleAngleDeg);
   const gaugeColour = getRotorSpeedGaugeColour(currentRotorSpeedRpm, ratedRotorSpeedRpm);
+  const fiveRpmAngleDeg = startAngleDeg + (5 - minRotorSpeedRpm) / (maxRotorSpeedRpm - minRotorSpeedRpm) * (endAngleDeg - startAngleDeg);
+  const fiveMark = pointOnCircle(centre, gaugeRadiusPx + 4, fiveRpmAngleDeg);
+  const ratedMark = pointOnCircle(centre, gaugeRadiusPx + 4, ratedAngleDeg);
 
   return (
     <g className="fowt-rotor-speed-gauge" aria-hidden="true">
@@ -383,6 +387,13 @@ function RotorSpeedGauge(props: {
       <TickMark centre={centre} radiusPx={gaugeRadiusPx} angleDeg={(startAngleDeg + endAngleDeg) / 2} />
       <TickMark centre={centre} radiusPx={gaugeRadiusPx} angleDeg={endAngleDeg} />
       <TickMark centre={centre} radiusPx={gaugeRadiusPx} angleDeg={ratedAngleDeg} className="fowt-gauge-target-tick" />
+      {showReferenceLabels && <g className="scene-rpm-reference-labels">
+        <TickMark centre={centre} radiusPx={gaugeRadiusPx} angleDeg={fiveRpmAngleDeg} className="fowt-gauge-five-tick" />
+        <path d={`M ${fiveMark.x} ${fiveMark.y} L ${centre.x - 17} ${centre.y + 49} H ${centre.x - 23}`} />
+        <text x={centre.x - 27} y={centre.y + 54} textAnchor="end">5 RPM</text>
+        <path className="rated-mark" d={`M ${ratedMark.x} ${ratedMark.y} L ${centre.x + 54} ${centre.y + 30} H ${centre.x + 67}`} />
+        <text className="rated-mark" x={centre.x + 67} y={centre.y + 42} textAnchor="end">7.55 RPM</text>
+      </g>}
       <line
         className="fowt-gauge-needle"
         x1={centre.x}
@@ -392,7 +403,7 @@ function RotorSpeedGauge(props: {
         style={{ stroke: gaugeColour }}
       />
       <circle className="fowt-gauge-centre" cx={centre.x} cy={centre.y} r="5.8" style={{ fill: gaugeColour }} />
-      <text className="fowt-rpm-gauge-value" x={centre.x} y={centre.y + 65} textAnchor="middle">
+      <text className="fowt-rpm-gauge-value" x={centre.x} y={centre.y + (showReferenceLabels ? 70 : 65)} textAnchor="middle">
         {sample === undefined ? "-- rpm" : `${formatNumber(currentRotorSpeedRpm, 2)} RPM`}
       </text>
     </g>
@@ -569,24 +580,6 @@ function createCatenaryPath(fairlead: Point, anchor: Point): string {
   };
 
   return `M ${round(fairlead.x)} ${round(fairlead.y)} C ${round(control1.x)} ${round(control1.y)}, ${round(control2.x)} ${round(control2.y)}, ${round(touchdown.x)} ${round(touchdown.y)} L ${round(anchor.x)} ${round(anchor.y)}`;
-}
-
-function getCollectivePitchColour(fraction: number): string {
-  const t = clamp(fraction, 0, 1);
-
-  if (t < 0.5) {
-    return interpolateRgb(
-      { r: 37, g: 99, b: 235 },
-      { r: 234, g: 179, b: 8 },
-      t / 0.5,
-    );
-  }
-
-  return interpolateRgb(
-    { r: 234, g: 179, b: 8 },
-    { r: 220, g: 38, b: 38 },
-    (t - 0.5) / 0.5,
-  );
 }
 
 function getRotorSpeedGaugeColour(currentRotorSpeedRpm: number, ratedRotorSpeedRpm: number): string {

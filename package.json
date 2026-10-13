@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "check:all": "npm run check:live-settings && npm run check:below-rated && npm run check:smoothing && npm run check:suggested-gains && npm run check:browser-range && npm run check:controls && npm run check:startup-shutdown && npm run check:wind-estimator && npm run check:gain-scheduling",
+    "check:all": "npm run check:live-settings && npm run check:below-rated && npm run check:smoothing && npm run check:suggested-gains && npm run check:browser-range && npm run check:controls && npm run check:startup-shutdown && npm run check:wind-estimator && npm run check:gain-scheduling && npm run check:geometry && npm run check:motion && npm run check:catenaries",
     "check:wind-estimator": "node scripts/check-wind-estimator.mjs",
     "check:gain-scheduling": "node scripts/check-gain-scheduling.mjs",
     "check:startup-shutdown": "node scripts/check-startup-shutdown.mjs",
@@ -18,17 +18,23 @@
     "check:suggested-gains": "node scripts/check-suggested-gains.mjs",
     "check:browser-range": "node scripts/check-browser-range.mjs",
     "check:controls": "node scripts/check-controls.mjs",
+    "check:geometry": "node scripts/check-reference-geometry.mjs",
+    "check:motion": "node scripts/check-scene-motion.mjs",
+    "check:catenaries": "node scripts/check-catenaries.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-three/fiber": "9.8.1",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "0.186.0",
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",

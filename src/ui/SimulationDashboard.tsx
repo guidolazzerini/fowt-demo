@@ -1,6 +1,6 @@
 import { useSimulation } from "../app/useSimulation";
 import { ControlsPanel } from "./ControlsPanel";
-import { FowtSchematic } from "./FowtSchematic";
+import { TurbineView } from "./TurbineView";
 import { PlotPanel } from "./PlotPanel";
 import { StatusPanel } from "./StatusPanel";
 import { SimulationToolbar } from "./SimulationToolbar";
@@ -27,6 +27,7 @@ export function SimulationDashboard() {
           onSettingsChange={simulation.updateSettings}
         />
         <div className="right-column">
+          <TurbineView sample={simulation.latestSample} history={simulation.history} runState={simulation.runState} />
           <StatusPanel
             sample={simulation.latestSample}
             history={simulation.history}
@@ -35,7 +36,6 @@ export function SimulationDashboard() {
             runState={simulation.runState}
             isRunning={simulation.isRunning}
           />
-          <FowtSchematic sample={simulation.latestSample} history={simulation.history} />
           <PlotPanel history={simulation.history} runState={simulation.runState} />
           <ControllerDiagnostics history={simulation.history} operation={simulation.operation} settings={simulation.settings} />
         </div>

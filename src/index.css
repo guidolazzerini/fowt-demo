@@ -207,6 +207,37 @@ select {
   gap: 1rem;
 }
 
+/* View selection is presentation state, independent of simulator controls. */
+.turbine-view { min-width: 0; }
+.turbine-view-selector { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
+.turbine-view-selector button { background: var(--surface); color: var(--accent-dark); border: 1px solid var(--border); }
+.turbine-view-selector button[aria-pressed="true"] { background: var(--accent-dark); color: white; }
+.turbine-view-selector button:hover { background: #dcecf6; color: var(--accent-dark); }
+.scene-caption { color: var(--muted); font-size: 0.8rem; line-height: 1.5; margin: 0.45rem 0 0; }
+.scene-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.7rem; }
+.scene-actions span { color: var(--muted); font-size: 0.78rem; }
+.scene-actions button { font-size: 0.8rem; }
+.scene-canvas { position: relative; width: 100%; height: clamp(360px, 55vw, 580px); overflow: hidden; border: 1px solid var(--border); border-radius: 12px; }
+.scene-canvas canvas { display: block; touch-action: none; }
+.scene-fallback { padding: 1.5rem; line-height: 1.6; color: var(--muted); }
+.scene-options { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 0 0 0.75rem; }
+.scene-options label, .scene-actions label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; }
+.scene-options select, .scene-actions select { width: auto; padding: 0.35rem; }
+.scene-options input[type="checkbox"] { width: auto; }
+.scene-gauges { position: absolute; top: 10px; right: 10px; width: 280px; max-width: 55%; pointer-events: none; }
+.scene-gauge-scale { font-size: 10px; fill: #5c6b7a; }
+.scene-rpm-reference-labels text { font-size: 10px; font-weight: 700; fill: #276887; }
+.scene-rpm-reference-labels path { fill: none; stroke: #276887; stroke-width: 1; }
+.scene-rpm-reference-labels text.rated-mark { fill: #167a32; }
+.scene-rpm-reference-labels path.rated-mark { stroke: #167a32; }
+.fowt-gauge-five-tick { stroke: #276887; stroke-width: 3.2; }
+.scene-spatial-label { position: absolute; visibility: hidden; transform: translate(-50%, -100%); white-space: nowrap; pointer-events: none; padding: 0.3rem 0.5rem; border-radius: 6px; font-size: 0.75rem; font-variant-numeric: tabular-nums; background: #ffffffed; }
+.scene-wind-value { color: #9b5412; border: 1px solid #e99b47; transform: translate(-100%, -100%); }
+.scene-pitch-value { color: #704db3; border: 1px solid #a998cf; transform: translate(0, 0); }
+.scene-solver-warning { font-size: 0.8rem; color: #97371d; }
+.scene-solver-warning:empty { display: none; }
+@media (max-width: 600px) { .scene-gauges { width: 215px; max-width: 58%; } .scene-spatial-label { font-size: 0.65rem; padding: 0.2rem; } }
+
 .panel {
   border: 1px solid var(--border);
   border-radius: var(--radius);

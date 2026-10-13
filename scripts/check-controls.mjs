@@ -82,6 +82,26 @@ try {
     platformPitchRad: 0, platformPitchRateRadPerSec: 0,
   } }));
   assert(parkedSchematic.includes('90.0°'), 'Schematic must not clamp feathered pitch to 30 degrees');
+  const { TurbineView } = await server.ssrLoadModule('/src/ui/TurbineView.tsx');
+  const initialView = renderToStaticMarkup(createElement(TurbineView, { history: [], sample: undefined, runState: 'stopped' }));
+  assert.match(initialView, /aria-pressed="true"[^>]*>2D · live motion/);
+  assert.match(initialView, /aria-pressed="false"[^>]*>3D · live motion/);
+  assert(initialView.includes('Animated side-view schematic'));
+  assert(!initialView.includes('<canvas'), 'Default 2D does not mount a WebGL canvas');
+  console.log('PASS: view selector defaults to live 2D; live 3D is not mounted initially');
+  const { SceneGauges } = await server.ssrLoadModule('/src/ui/SceneGauges.tsx');
+  const readouts = renderToStaticMarkup(createElement(SceneGauges, { sample: {
+    rotorSpeedRadPerSec: 0, collectivePitchRad: Math.PI / 2,
+    platformPitchRad: -Math.PI / 18, windSpeedMps: 18.5,
+  } }));
+  for (const label of ['Rotor Speed', 'Blade Pitch', '0–10 rpm', '−5° to 90°']) assert(readouts.includes(label));
+  for (const value of ['0.00', '90.0']) assert(readouts.includes(value));
+  assert(readouts.includes('fowt-gauge-needle'));
+  assert.match(renderToStaticMarkup(createElement(SceneGauges, { sample: undefined })), /unavailable/);
+  const { SimulationDashboard } = await server.ssrLoadModule('/src/ui/SimulationDashboard.tsx');
+  const dashboard = renderToStaticMarkup(createElement(SimulationDashboard));
+  assert(dashboard.indexOf('Turbine motion') < dashboard.indexOf('At a glance'));
+  console.log('PASS: reused control gauges, parked/full-feather, missing sample and At a glance below turbine');
   console.log('PASS: five linked tabs, initial visibility, unique labeled inputs, contextual wind controls, shared bounds, collapsed help and visible boundary alert');
   console.log('NOTE: static rendering only; browser interaction and responsive visual inspection remain manual.');
   await checkDiagnostics(server);
